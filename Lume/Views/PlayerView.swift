@@ -188,21 +188,6 @@ struct PlayerView: View {
                     .foregroundStyle(Color(hex: "2a2d31"))
 
                 Spacer()
-
-                Button {
-                    showFavoritesPicker = true
-                } label: {
-                    Image(systemName: "heart")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(Color(hex: "2a2d31"))
-                }
-
-                Button {
-                } label: {
-                    Image(systemName: "heart")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(Color(hex: "2a2d31"))
-                }
             }
 
             HStack(spacing: 10) {
@@ -217,17 +202,6 @@ struct PlayerView: View {
                 .foregroundStyle(Color(hex: "7a7f86"))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var actionRow: some View {
-        HStack(spacing: 30) {
-            ActionIcon(systemName: "bell")
-            ActionIcon(systemName: "waveform", label: "Off")
-            ActionIcon(systemName: "arrow.down.to.line")
-            ActionIcon(systemName: "message", label: "45")
-            ActionIcon(systemName: "ellipsis")
-        }
-        .padding(.top, 12)
     }
 
     private var progressSection: some View {
