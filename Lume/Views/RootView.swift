@@ -3,6 +3,7 @@ import SwiftUI
 struct RootView: View {
     @StateObject private var auth = AuthViewModel()
     @StateObject private var playback = PlayerViewModel()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -30,6 +31,13 @@ struct RootView: View {
         }
         .onChange(of: auth.identityToken) { token in
             APIClient.shared.authorizationToken = token
+        }
+        .onChange(of: scenePhase) { phase in
+            if phase == .background || phase == .active {
+                if playback.isPlaying {
+                    AudioSessionManager.configurePlayback()
+                }
+            }
         }
         .sheet(isPresented: $playback.presentExpanded) {
             if let detail = playback.detail {

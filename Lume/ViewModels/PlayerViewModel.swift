@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import Combine
+import MediaPlayer
 
 @MainActor
 final class PlayerViewModel: ObservableObject {
@@ -18,21 +19,33 @@ final class PlayerViewModel: ObservableObject {
     private var timeObserver: Any?
     private var lastProgressSentAt: Double = 0
     private var currentMediaID: String?
+    private var playlist: [String] = []
+    private var currentIndex: Int?
+    private var remoteConfigured = false
 
     init(api: APIClient = .shared) {
         self.api = api
+        configureRemoteCommands()
+    }
+
+    func setQueue(ids: [String], currentID: String) {
+        playlist = ids
+        currentIndex = ids.firstIndex(of: currentID)
     }
 
     func load(id: String, autoPlay: Bool) async {
         errorMessage = nil
         if currentMediaID == id, detail != nil {
             if autoPlay {
-                player.playImmediately(atRate: rate)
-                isPlaying = true
+                play()
+                if let detail {
+                    NowPlayingManager.updateMetadata(detail: detail, elapsed: positionSeconds, duration: durationSeconds, isPlaying: true)
+                }
             }
             return
         }
         do {
+            AudioSessionManager.configurePlayback()
             let detail = try await api.fetchMediaDetail(id: id)
             self.detail = detail
             currentMediaID = id
@@ -41,9 +54,9 @@ final class PlayerViewModel: ObservableObject {
             player.replaceCurrentItem(with: item)
             durationSeconds = Double(detail.durationMS) / 1000.0
             observePlayer(item: item)
+            NowPlayingManager.updateMetadata(detail: detail, elapsed: 0, duration: durationSeconds, isPlaying: autoPlay)
             if autoPlay {
-                player.playImmediately(atRate: rate)
-                isPlaying = true
+                play()
             }
         } catch {
             errorMessage = "Failed to load media."
@@ -52,18 +65,19 @@ final class PlayerViewModel: ObservableObject {
 
     func togglePlay() {
         if isPlaying {
-            player.pause()
-            isPlaying = false
+            pause()
+            NowPlayingManager.updatePlayback(elapsed: positionSeconds, duration: durationSeconds, isPlaying: false)
             Task { await sendProgress(event: "pause") }
         } else {
-            player.playImmediately(atRate: rate)
-            isPlaying = true
+            play()
+            NowPlayingManager.updatePlayback(elapsed: positionSeconds, duration: durationSeconds, isPlaying: true)
         }
     }
 
     func seek(to seconds: Double) {
         let time = CMTime(seconds: seconds, preferredTimescale: 600)
         player.seek(to: time)
+        NowPlayingManager.updatePlayback(elapsed: seconds, duration: durationSeconds, isPlaying: isPlaying)
     }
 
     func seek(by delta: Double) {
@@ -86,10 +100,74 @@ final class PlayerViewModel: ObservableObject {
         NotificationCenter.default.removeObserver(self)
     }
 
+    func nextTrack() {
+        guard let index = currentIndex else { return }
+        let nextIndex = index + 1
+        guard nextIndex < playlist.count else { return }
+        currentIndex = nextIndex
+        Task { await load(id: playlist[nextIndex], autoPlay: true) }
+    }
+
+    func previousTrack() {
+        if positionSeconds > 3 {
+            seek(to: 0)
+            return
+        }
+        guard let index = currentIndex else { return }
+        let prevIndex = index - 1
+        guard prevIndex >= 0 else { return }
+        currentIndex = prevIndex
+        Task { await load(id: playlist[prevIndex], autoPlay: true) }
+    }
+
+    func play() {
+        AudioSessionManager.configurePlayback()
+        player.playImmediately(atRate: rate)
+        isPlaying = true
+    }
+
+    func pause() {
+        player.pause()
+        isPlaying = false
+    }
+
     func collapseToMini() {
         guard detail != nil else { return }
         isMiniVisible = true
         presentExpanded = false
+    }
+
+    private func configureRemoteCommands() {
+        guard !remoteConfigured else { return }
+        remoteConfigured = true
+
+        let commandCenter = MPRemoteCommandCenter.shared()
+        commandCenter.playCommand.isEnabled = true
+        commandCenter.pauseCommand.isEnabled = true
+        commandCenter.togglePlayPauseCommand.isEnabled = true
+        commandCenter.nextTrackCommand.isEnabled = true
+        commandCenter.previousTrackCommand.isEnabled = true
+
+        commandCenter.playCommand.addTarget { [weak self] _ in
+            self?.play()
+            return .success
+        }
+        commandCenter.pauseCommand.addTarget { [weak self] _ in
+            self?.pause()
+            return .success
+        }
+        commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
+            self?.togglePlay()
+            return .success
+        }
+        commandCenter.nextTrackCommand.addTarget { [weak self] _ in
+            self?.nextTrack()
+            return .success
+        }
+        commandCenter.previousTrackCommand.addTarget { [weak self] _ in
+            self?.previousTrack()
+            return .success
+        }
     }
 
     private func pickSource(from sources: [MediaSource]) -> MediaSource {
@@ -125,6 +203,7 @@ final class PlayerViewModel: ObservableObject {
 
     @objc private func itemDidFinish() {
         isPlaying = false
+        NowPlayingManager.updatePlayback(elapsed: durationSeconds, duration: durationSeconds, isPlaying: false)
         Task { await sendProgress(event: "end") }
     }
 
@@ -134,6 +213,7 @@ final class PlayerViewModel: ObservableObject {
             lastProgressSentAt = now
             Task { await sendProgress(event: nil) }
         }
+        NowPlayingManager.updatePlayback(elapsed: now, duration: durationSeconds, isPlaying: isPlaying)
     }
 
     private func sendProgress(event: String?) async {

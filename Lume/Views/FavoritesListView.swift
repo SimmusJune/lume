@@ -42,11 +42,12 @@ struct FavoritesListView: View {
                             Text(error)
                                 .foregroundStyle(.red)
                         } else {
+                            let playlist = viewModel.items.map(\.mediaID)
                             LazyVStack(spacing: 12) {
                                 ForEach(Array(viewModel.items.enumerated()), id: \.element.id) { index, item in
                                     HStack(alignment: .top, spacing: 12) {
                                         NavigationLink {
-                                            PlayerView(mediaID: item.mediaID, autoPlay: true)
+                                            PlayerView(mediaID: item.mediaID, autoPlay: true, playlist: playlist)
                                         } label: {
                                             FavoriteItemContent(index: index + 1, item: item)
                                                 .frame(maxWidth: .infinity, alignment: .leading)

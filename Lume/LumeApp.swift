@@ -6,9 +6,14 @@
 //
 
 import SwiftUI
+import AVFoundation
 
 @main
 struct LumeApp: App {
+    init() {
+        AudioSessionManager.configurePlayback()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

@@ -48,7 +48,7 @@ struct ExploreView: View {
                 }
             }
             .navigationDestination(for: MediaItem.self) { item in
-                PlayerView(mediaID: item.id, autoPlay: false)
+                PlayerView(mediaID: item.id, autoPlay: false, playlist: viewModel.items.map(\.id))
             }
             .task {
                 if viewModel.items.isEmpty {

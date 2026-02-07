@@ -4,6 +4,13 @@ import SwiftUI
 struct PlayerView: View {
     let mediaID: String
     let autoPlay: Bool
+    let playlist: [String]?
+
+    init(mediaID: String, autoPlay: Bool, playlist: [String]? = nil) {
+        self.mediaID = mediaID
+        self.autoPlay = autoPlay
+        self.playlist = playlist
+    }
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var viewModel: PlayerViewModel
@@ -22,13 +29,11 @@ struct PlayerView: View {
             VStack(spacing: 12) {
                 topBar
 
-                pageDots
+                // pageDots
 
                 mediaHero
 
                 titleSection
-
-                actionRow
 
                 progressSection
 
@@ -46,12 +51,17 @@ struct PlayerView: View {
         }
         .onAppear {
             viewModel.isMiniVisible = false
+            if let playlist {
+                viewModel.setQueue(ids: playlist, currentID: mediaID)
+            }
         }
         .onDisappear {
             if viewModel.detail != nil {
                 viewModel.isMiniVisible = true
             }
         }
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
         .gesture(
             DragGesture()
                 .onChanged { value in
@@ -199,10 +209,7 @@ struct PlayerView: View {
                 Text("Luna Echoes")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Color(hex: "5e636a"))
-                StatPill(title: "关注")
-                StatPill(title: "6 人在听")
-                StatPill(title: "HQ")
-                StatPill(title: "原声")
+               
             }
 
             Text("Rider Rider Rider of the sky")
@@ -254,7 +261,7 @@ struct PlayerView: View {
             }
 
             Button {
-                viewModel.seek(by: -10)
+                viewModel.previousTrack()
             } label: {
                 Image(systemName: "backward.fill")
             }
@@ -273,7 +280,7 @@ struct PlayerView: View {
             }
 
             Button {
-                viewModel.seek(by: 10)
+                viewModel.nextTrack()
             } label: {
                 Image(systemName: "forward.fill")
             }
