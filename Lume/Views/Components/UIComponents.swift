@@ -19,6 +19,7 @@ struct ChipView: View {
 
 struct MediaCard: View {
     let item: MediaItem
+    var onFavorite: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 10) {
@@ -26,29 +27,40 @@ struct MediaCard: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    if item.type == .audio {
-                        AudioCacheBadge(sourceID: item.id)
-                    }
-
                     Text(item.title)
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.white)
                         .lineLimit(1)
+
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text(durationText(item.durationMS))
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .foregroundStyle(Color.white.opacity(0.7))
+                    .layoutPriority(1)
                 }
 
-                HStack(spacing: 8) {
-                    Text(item.type == .audio ? "Music" : "Video")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color.white.opacity(0.65))
-                        .lineLimit(1)
-
-                    Text(durationText(item.durationMS))
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.7))
-                }
+                Text(item.type == .audio ? "Music" : "Video")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.65))
+                    .lineLimit(1)
             }
 
             Spacer(minLength: 0)
+
+            if let onFavorite {
+                Button {
+                    onFavorite()
+                } label: {
+                    Image(systemName: "heart")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.white.opacity(0.8))
+                        .padding(6)
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -82,7 +94,7 @@ struct MediaCard: View {
                 } else {
                     Image(systemName: "cloud")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.white.opacity(0.5))
+                        .foregroundStyle(Color.gray)
                 }
             }
             .task(id: sourceID) { await refresh() }
@@ -116,7 +128,7 @@ struct MediaCard: View {
     }
 
     private var thumbnail: some View {
-        ZStack {
+        ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 9)
                 .fill(Color.white.opacity(0.08))
                 .frame(width: 48, height: 48)
@@ -133,6 +145,11 @@ struct MediaCard: View {
             .frame(width: 48, height: 48)
             .clipShape(RoundedRectangle(cornerRadius: 9))
 
+            if item.type == .audio {
+                AudioCacheBadge(sourceID: item.id)
+                    .padding(3)
+                    .padding(4)
+            }
         }
     }
 

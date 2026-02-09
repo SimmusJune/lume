@@ -2,6 +2,7 @@ import AVFoundation
 import Foundation
 import Combine
 import MediaPlayer
+import SwiftUI
 
 @MainActor
 final class PlayerViewModel: ObservableObject {
@@ -38,6 +39,9 @@ final class PlayerViewModel: ObservableObject {
     @Published var presentExpanded = false
     @Published var playMode: PlayMode = .sequential
 
+    @AppStorage("lume.lastPlayedMediaID") private var lastPlayedMediaID = ""
+    @AppStorage("lume.lastPlayedQueue") private var lastPlayedQueue = ""
+
     private let api: APIClient
     private var timeObserver: Any?
     private var itemStatusObserver: NSKeyValueObservation?
@@ -59,12 +63,16 @@ final class PlayerViewModel: ObservableObject {
     func setQueue(ids: [String], currentID: String) {
         playlist = ids
         currentIndex = ids.firstIndex(of: currentID)
+        persistQueue(ids)
     }
 
     func load(id: String, autoPlay: Bool) async {
         errorMessage = nil
         if currentMediaID == id, detail != nil {
             if autoPlay {
+                if durationSeconds > 0, positionSeconds >= max(0, durationSeconds - 0.5) {
+                    seek(to: 0)
+                }
                 play()
                 if let detail {
                     NowPlayingManager.updateMetadata(detail: detail, elapsed: positionSeconds, duration: durationSeconds, isPlaying: true)
@@ -77,6 +85,7 @@ final class PlayerViewModel: ObservableObject {
             let detail = try await api.fetchMediaDetail(id: id)
             self.detail = detail
             currentMediaID = id
+            lastPlayedMediaID = id
             let source = pickSource(from: detail.sources)
             let playbackURL = await AudioCache.shared.cachedURLIfNeeded(
                 source: source,
@@ -94,6 +103,16 @@ final class PlayerViewModel: ObservableObject {
         } catch {
             errorMessage = "Failed to load media."
         }
+    }
+
+    func restoreLastPlayedIfNeeded(autoPlay: Bool = false) async {
+        let id = lastPlayedMediaID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty else { return }
+        guard detail == nil else { return }
+        if let queue = restoreQueue(), queue.contains(id) {
+            setQueue(ids: queue, currentID: id)
+        }
+        await load(id: id, autoPlay: autoPlay)
     }
 
     func togglePlay() {
@@ -329,9 +348,9 @@ final class PlayerViewModel: ObservableObject {
         }
 
         let nextIndex = index + 1
-        guard nextIndex < playlist.count else { return }
-        currentIndex = nextIndex
-        Task { await load(id: playlist[nextIndex], autoPlay: true) }
+        let wrappedIndex = nextIndex < playlist.count ? nextIndex : 0
+        currentIndex = wrappedIndex
+        Task { await load(id: playlist[wrappedIndex], autoPlay: true) }
     }
 
     private func randomIndex(excluding index: Int) -> Int {
@@ -341,5 +360,21 @@ final class PlayerViewModel: ObservableObject {
             nextIndex = Int.random(in: 0..<playlist.count)
         }
         return nextIndex
+    }
+
+    private func persistQueue(_ ids: [String]) {
+        guard !ids.isEmpty else {
+            lastPlayedQueue = ""
+            return
+        }
+        if let data = try? JSONEncoder().encode(ids) {
+            lastPlayedQueue = String(data: data, encoding: .utf8) ?? ""
+        }
+    }
+
+    private func restoreQueue() -> [String]? {
+        let trimmed = lastPlayedQueue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let data = trimmed.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode([String].self, from: data)
     }
 }

@@ -3,10 +3,18 @@ import Combine
 
 @MainActor
 final class TagPlaylistsViewModel: ObservableObject {
-    struct TagGroup: Identifiable {
+    struct TagGroup: Identifiable, Hashable {
         let id: String
         let tag: String
         let items: [MediaItem]
+
+        static func == (lhs: TagGroup, rhs: TagGroup) -> Bool {
+            lhs.id == rhs.id
+        }
+
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(id)
+        }
     }
 
     @Published var groups: [TagGroup] = []

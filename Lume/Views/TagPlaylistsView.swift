@@ -94,6 +94,7 @@ private struct TagPlaylistDetailView: View {
     let tag: String
     let items: [MediaItem]
     @EnvironmentObject private var playback: PlayerViewModel
+    @State private var favoriteTarget: MediaItem?
 
     var body: some View {
         ZStack {
@@ -112,12 +113,13 @@ private struct TagPlaylistDetailView: View {
 
                     LazyVStack(spacing: 12) {
                         ForEach(items) { item in
-                            Button {
+                            MediaCard(item: item, onFavorite: {
+                                favoriteTarget = item
+                            })
+                            .contentShape(Rectangle())
+                            .onTapGesture {
                                 play(item: item, playlist: items.map(\.id))
-                            } label: {
-                                MediaCard(item: item)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -128,6 +130,9 @@ private struct TagPlaylistDetailView: View {
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $favoriteTarget) { item in
+            FavoritesPickerSheet(mediaID: item.id, mediaType: item.type)
+        }
     }
 
     private func play(item: MediaItem, playlist: [String]) {

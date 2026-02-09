@@ -22,7 +22,7 @@ struct RootView: View {
                 }
             }
 
-            if playback.isMiniVisible, playback.detail != nil {
+            if playback.isMiniVisible {
                 MiniPlayerBar()
                     .environmentObject(playback)
                     .padding(.horizontal, 16)
@@ -31,6 +31,18 @@ struct RootView: View {
         }
         .onChange(of: auth.identityToken) { token in
             APIClient.shared.authorizationToken = token
+        }
+        .onChange(of: auth.user) { _ in
+            playback.isMiniVisible = auth.isSignedIn
+            if auth.isSignedIn {
+                Task { await playback.restoreLastPlayedIfNeeded(autoPlay: true) }
+            }
+        }
+        .onAppear {
+            if auth.isSignedIn {
+                playback.isMiniVisible = true
+                Task { await playback.restoreLastPlayedIfNeeded(autoPlay: true) }
+            }
         }
         .onChange(of: scenePhase) { phase in
             if phase == .background || phase == .active {
