@@ -6,23 +6,16 @@ struct MiniPlayerBar: View {
     var body: some View {
         if let detail = viewModel.detail {
             HStack(spacing: 12) {
-                AsyncImage(url: detail.thumbURL) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    case .failure:
-                        Color.black.opacity(0.2)
-                            .overlay(
-                                Image(systemName: detail.type == .audio ? "music.note" : "film")
-                                    .foregroundStyle(Color.black.opacity(0.6))
-                            )
-                    case .empty:
-                        Color.black.opacity(0.1)
-                    @unknown default:
-                        Color.black.opacity(0.1)
-                    }
+                CachedAsyncImage(url: detail.thumbURL) { image in
+                    image
+                        .resizable()
+                        .scaledToFill()
+                } placeholder: {
+                    Color.black.opacity(0.2)
+                        .overlay(
+                            Image(systemName: detail.type == .audio ? "music.note" : "film")
+                                .foregroundStyle(Color.black.opacity(0.6))
+                        )
                 }
                 .frame(width: 50, height: 50)
                 .clipShape(RoundedRectangle(cornerRadius: 10))

@@ -5,6 +5,28 @@ import MediaPlayer
 
 @MainActor
 final class PlayerViewModel: ObservableObject {
+    enum PlayMode: String, CaseIterable {
+        case sequential
+        case singleLoop
+        case shuffle
+
+        var iconName: String {
+            switch self {
+            case .sequential: return "repeat"
+            case .singleLoop: return "repeat.1"
+            case .shuffle: return "shuffle"
+            }
+        }
+
+        var label: String {
+            switch self {
+            case .sequential: return "顺序播放"
+            case .singleLoop: return "单曲循环"
+            case .shuffle: return "随机播放"
+            }
+        }
+    }
+
     @Published var player = AVPlayer()
     @Published var detail: MediaDetail?
     @Published var isPlaying = false
@@ -14,9 +36,12 @@ final class PlayerViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var isMiniVisible = false
     @Published var presentExpanded = false
+    @Published var playMode: PlayMode = .sequential
 
     private let api: APIClient
     private var timeObserver: Any?
+    private var itemStatusObserver: NSKeyValueObservation?
+    private var itemDurationObserver: NSKeyValueObservation?
     private var lastProgressSentAt: Double = 0
     private var currentMediaID: String?
     private var playlist: [String] = []
@@ -50,7 +75,12 @@ final class PlayerViewModel: ObservableObject {
             self.detail = detail
             currentMediaID = id
             let source = pickSource(from: detail.sources)
-            let item = AVPlayerItem(url: source.url)
+            let playbackURL = await AudioCache.shared.cachedURLIfNeeded(
+                source: source,
+                mediaType: detail.type,
+                mediaID: detail.id
+            )
+            let item = AVPlayerItem(url: playbackURL)
             player.replaceCurrentItem(with: item)
             durationSeconds = Double(detail.durationMS) / 1000.0
             observePlayer(item: item)
@@ -97,15 +127,13 @@ final class PlayerViewModel: ObservableObject {
             player.removeTimeObserver(timeObserver)
             self.timeObserver = nil
         }
+        itemStatusObserver = nil
+        itemDurationObserver = nil
         NotificationCenter.default.removeObserver(self)
     }
 
     func nextTrack() {
-        guard let index = currentIndex else { return }
-        let nextIndex = index + 1
-        guard nextIndex < playlist.count else { return }
-        currentIndex = nextIndex
-        Task { await load(id: playlist[nextIndex], autoPlay: true) }
+        advanceTrack(auto: false)
     }
 
     func previousTrack() {
@@ -185,12 +213,27 @@ final class PlayerViewModel: ObservableObject {
             player.removeTimeObserver(timeObserver)
             self.timeObserver = nil
         }
+        itemStatusObserver = nil
+        itemDurationObserver = nil
 
         let interval = CMTime(seconds: 1, preferredTimescale: 600)
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             guard let self else { return }
             positionSeconds = time.seconds
+            updateDurationIfNeeded(from: item)
             maybeSendProgress()
+        }
+
+        itemStatusObserver = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
+            guard let self else { return }
+            if item.status == .readyToPlay {
+                updateDurationIfNeeded(from: item)
+            }
+        }
+
+        itemDurationObserver = item.observe(\.duration, options: [.new]) { [weak self] item, _ in
+            guard let self else { return }
+            updateDurationIfNeeded(from: item)
         }
 
         NotificationCenter.default.addObserver(
@@ -201,10 +244,22 @@ final class PlayerViewModel: ObservableObject {
         )
     }
 
+    private func updateDurationIfNeeded(from item: AVPlayerItem) {
+        let duration = item.duration
+        guard duration.isNumeric else { return }
+        let seconds = duration.seconds
+        guard seconds.isFinite, seconds > 0 else { return }
+        if abs(durationSeconds - seconds) > 0.5 {
+            durationSeconds = seconds
+            NowPlayingManager.updatePlayback(elapsed: positionSeconds, duration: durationSeconds, isPlaying: isPlaying)
+        }
+    }
+
     @objc private func itemDidFinish() {
         isPlaying = false
         NowPlayingManager.updatePlayback(elapsed: durationSeconds, duration: durationSeconds, isPlaying: false)
         Task { await sendProgress(event: "end") }
+        advanceTrack(auto: true)
     }
 
     private func maybeSendProgress() {
@@ -224,5 +279,42 @@ final class PlayerViewModel: ObservableObject {
         } catch {
             // Best-effort progress update; ignore failures.
         }
+    }
+
+    func cyclePlayMode() {
+        let modes = PlayMode.allCases
+        guard let index = modes.firstIndex(of: playMode) else { return }
+        let nextIndex = (index + 1) % modes.count
+        playMode = modes[nextIndex]
+    }
+
+    private func advanceTrack(auto: Bool) {
+        guard let index = currentIndex, !playlist.isEmpty else { return }
+
+        if playMode == .singleLoop, auto {
+            Task { await load(id: playlist[index], autoPlay: true) }
+            return
+        }
+
+        if playMode == .shuffle {
+            let nextIndex = randomIndex(excluding: index)
+            currentIndex = nextIndex
+            Task { await load(id: playlist[nextIndex], autoPlay: true) }
+            return
+        }
+
+        let nextIndex = index + 1
+        guard nextIndex < playlist.count else { return }
+        currentIndex = nextIndex
+        Task { await load(id: playlist[nextIndex], autoPlay: true) }
+    }
+
+    private func randomIndex(excluding index: Int) -> Int {
+        guard playlist.count > 1 else { return index }
+        var nextIndex = index
+        while nextIndex == index {
+            nextIndex = Int.random(in: 0..<playlist.count)
+        }
+        return nextIndex
     }
 }

@@ -1,6 +1,6 @@
 import Foundation
 
 enum AppConfig {
-    static let baseURL = URL(string: "https://example.com")!
-    static let useMockData = true
+    static let libraryFolderName = "Lume"
+    static let libraryFileName = "library.json"
 }

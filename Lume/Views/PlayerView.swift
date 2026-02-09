@@ -191,17 +191,28 @@ struct PlayerView: View {
             }
 
             HStack(spacing: 10) {
-                Text("Luna Echoes")
+                Text(subtitleText)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Color(hex: "5e636a"))
                
             }
 
-            Text("Rider Rider Rider of the sky")
+            Text(sourceLabelText)
                 .font(.system(size: 13, weight: .regular))
                 .foregroundStyle(Color(hex: "7a7f86"))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var subtitleText: String {
+        if let subtitle = viewModel.detail?.subtitle, !subtitle.isEmpty {
+            return subtitle
+        }
+        return viewModel.detail?.type == .audio ? "Audio" : "Video"
+    }
+
+    private var sourceLabelText: String {
+        viewModel.detail?.sources.first?.url.host ?? "Local File"
     }
 
     private var progressSection: some View {
@@ -230,8 +241,9 @@ struct PlayerView: View {
     private var playbackControls: some View {
         HStack(spacing: 34) {
             Button {
+                viewModel.cyclePlayMode()
             } label: {
-                Image(systemName: "repeat")
+                Image(systemName: viewModel.playMode.iconName)
             }
 
             Button {
@@ -301,19 +313,12 @@ private struct VinylRecordView: View {
                 .fill(Color.white.opacity(0.75))
                 .frame(width: 120, height: 120)
                 .overlay(
-                    AsyncImage(url: coverURL) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .scaledToFill()
-                        case .failure:
-                            Color.black.opacity(0.1)
-                        case .empty:
-                            Color.black.opacity(0.05)
-                        @unknown default:
-                            Color.black.opacity(0.05)
-                        }
+                    CachedAsyncImage(url: coverURL) { image in
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    } placeholder: {
+                        Color.black.opacity(0.05)
                     }
                 )
                 .clipShape(Circle())

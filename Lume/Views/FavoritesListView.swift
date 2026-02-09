@@ -2,6 +2,7 @@ import SwiftUI
 
 struct FavoritesListView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var playback: PlayerViewModel
     @StateObject private var viewModel: FavoriteListViewModel
 
     init(group: FavoriteGroup) {
@@ -46,8 +47,8 @@ struct FavoritesListView: View {
                             LazyVStack(spacing: 12) {
                                 ForEach(Array(viewModel.items.enumerated()), id: \.element.id) { index, item in
                                     HStack(alignment: .top, spacing: 12) {
-                                        NavigationLink {
-                                            PlayerView(mediaID: item.mediaID, autoPlay: true, playlist: playlist)
+                                        Button {
+                                            play(item: item, playlist: playlist)
                                         } label: {
                                             FavoriteItemContent(index: index + 1, item: item)
                                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -74,6 +75,15 @@ struct FavoritesListView: View {
         .navigationBarHidden(true)
         .task {
             await viewModel.load()
+        }
+    }
+
+    private func play(item: FavoriteListItem, playlist: [String]) {
+        playback.setQueue(ids: playlist, currentID: item.mediaID)
+        Task {
+            await playback.load(id: item.mediaID, autoPlay: true)
+            playback.isMiniVisible = true
+            playback.presentExpanded = false
         }
     }
 

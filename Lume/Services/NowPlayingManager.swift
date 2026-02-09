@@ -9,7 +9,7 @@ enum NowPlayingManager {
     static func updateMetadata(detail: MediaDetail, elapsed: Double, duration: Double, isPlaying: Bool) {
         var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
         info[MPMediaItemPropertyTitle] = detail.title
-        info[MPMediaItemPropertyArtist] = "Lume"
+        info[MPMediaItemPropertyArtist] = detail.subtitle ?? "Lume"
         info[MPMediaItemPropertyPlaybackDuration] = duration
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsed
         info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
@@ -44,16 +44,12 @@ enum NowPlayingManager {
         }
 
         Task.detached {
-            do {
-                let (data, _) = try await URLSession.shared.data(from: url)
-                guard let image = UIImage(data: data) else { return }
+            if let image = await ImageCache.shared.image(for: url) {
                 let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
                 cachedArtwork[url] = artwork
                 await MainActor.run {
                     applyArtwork(artwork)
                 }
-            } catch {
-                return
             }
         }
     }

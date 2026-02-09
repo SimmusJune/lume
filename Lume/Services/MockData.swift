@@ -74,7 +74,8 @@ enum MockData {
                     title: title,
                     durationMS: durationMS,
                     thumbURL: thumbURL,
-                    status: "ready"
+                    status: "ready",
+                    tags: nil
                 )
             )
         }

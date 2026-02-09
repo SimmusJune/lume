@@ -21,64 +21,118 @@ struct MediaCard: View {
     let item: MediaItem
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            RoundedRectangle(cornerRadius: 18)
-                .fill(Color.white.opacity(0.04))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                )
-                .frame(height: 180)
-                .overlay {
-                    AsyncImage(url: item.thumbURL) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .scaledToFill()
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                .clipped()
-                        case .failure:
-                            Image(systemName: item.type == .audio ? "music.note" : "film")
-                                .font(.system(size: 36, weight: .bold))
-                                .foregroundStyle(Color.white.opacity(0.5))
-                        case .empty:
-                            ProgressView()
-                                .tint(.white)
-                        @unknown default:
-                            EmptyView()
-                        }
-                    }
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 18))
+        HStack(spacing: 10) {
+            thumbnail
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text(item.title)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    Text(durationText(item.durationMS))
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.7))
-                    Text("•")
-                        .foregroundStyle(Color.white.opacity(0.5))
-                    Text(item.type == .audio ? "Music" : "Video")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.7))
+                    if item.type == .audio {
+                        AudioCacheBadge(sourceID: item.id)
+                    }
+
+                    Text(item.title)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
                 }
             }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                LinearGradient(
-                    colors: [Color.black.opacity(0.75), Color.black.opacity(0.1)],
-                    startPoint: .bottom,
-                    endPoint: .top
+
+            Spacer(minLength: 0)
+
+            VStack(alignment: .trailing, spacing: 6) {
+                Text(item.type == .audio ? "Music" : "Video")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.65))
+                    .lineLimit(1)
+
+                Text(durationText(item.durationMS))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.7))
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.white.opacity(0.04))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
                 )
-                .clipShape(RoundedRectangle(cornerRadius: 18))
-            )
+        )
+    }
+
+    private struct AudioCacheBadge: View {
+        let sourceID: String
+        private let url: URL?
+        @State private var isCached: Bool?
+
+        init(sourceID: String) {
+            self.sourceID = sourceID
+            self.url = Self.normalizedURL(from: sourceID)
+        }
+
+        var body: some View {
+            Group {
+                if isCached == true {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Color(hex: "9dff85"))
+                } else {
+                    Image(systemName: "cloud")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.white.opacity(0.5))
+                }
+            }
+            .task(id: sourceID) { await refresh() }
+            .onReceive(NotificationCenter.default.publisher(for: AudioCache.didCacheAudio)) { notification in
+                guard let cachedURL = notification.object as? URL else { return }
+                guard cachedURL == url else { return }
+                Task { await refresh() }
+            }
+        }
+
+        private func refresh() async {
+            guard let url else {
+                await MainActor.run { isCached = nil }
+                return
+            }
+            let cached = await AudioCache.shared.isCached(url: url)
+            await MainActor.run { isCached = cached }
+        }
+
+        private static func normalizedURL(from raw: String) -> URL? {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { return nil }
+            if let url = URL(string: trimmed) {
+                return url
+            }
+            if let escaped = trimmed.addingPercentEncoding(withAllowedCharacters: .urlFragmentAllowed) {
+                return URL(string: escaped)
+            }
+            return nil
+        }
+    }
+
+    private var thumbnail: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 9)
+                .fill(Color.white.opacity(0.08))
+                .frame(width: 48, height: 48)
+
+            CachedAsyncImage(url: item.thumbURL) { image in
+                image
+                    .resizable()
+                    .scaledToFill()
+            } placeholder: {
+                Image(systemName: item.type == .audio ? "music.note" : "film")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(Color.white.opacity(0.6))
+            }
+            .frame(width: 48, height: 48)
+            .clipShape(RoundedRectangle(cornerRadius: 9))
+
         }
     }
 
