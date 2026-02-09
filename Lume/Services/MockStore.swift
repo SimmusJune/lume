@@ -233,6 +233,23 @@ actor LocalLibraryStore {
         return ImportReport(inserted: inserted, updated: updated, skipped: skipped)
     }
 
+    func exportJSON() throws -> Data {
+        let records = state.mediaRecords.map { record in
+            MediaExportRecord(
+                url: record.url.absoluteString,
+                title: record.title,
+                type: record.type.rawValue,
+                durationMS: record.durationMS,
+                thumbURL: record.thumbURL?.absoluteString,
+                subtitle: record.subtitle,
+                tags: record.tags,
+                format: record.format,
+                status: record.status
+            )
+        }
+        return try encoder.encode(records)
+    }
+
     func deleteMedia(id: String) throws {
         guard recordsByID[id] != nil else { return }
         state.mediaRecords.removeAll { $0.id == id }
@@ -564,6 +581,30 @@ private enum LibraryError: Error {
 
 private struct MediaImportPayload: Decodable {
     let items: [MediaImportRecord]
+}
+
+private struct MediaExportRecord: Encodable {
+    let url: String
+    let title: String
+    let type: String
+    let durationMS: Int
+    let thumbURL: String?
+    let subtitle: String?
+    let tags: [String]?
+    let format: String
+    let status: String
+
+    enum CodingKeys: String, CodingKey {
+        case url
+        case title
+        case type
+        case durationMS = "duration_ms"
+        case thumbURL = "thumb_url"
+        case subtitle
+        case tags
+        case format
+        case status
+    }
 }
 
 private struct MediaImportRecord: Decodable {

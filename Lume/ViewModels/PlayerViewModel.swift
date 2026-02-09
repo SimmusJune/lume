@@ -38,6 +38,7 @@ final class PlayerViewModel: ObservableObject {
     @Published var isMiniVisible = false
     @Published var presentExpanded = false
     @Published var playMode: PlayMode = .sequential
+    @Published private(set) var queueDetails: [MediaDetail] = []
 
     @AppStorage("lume.lastPlayedMediaID") private var lastPlayedMediaID = ""
     @AppStorage("lume.lastPlayedQueue") private var lastPlayedQueue = ""
@@ -50,10 +51,11 @@ final class PlayerViewModel: ObservableObject {
     private var lastStatsPosition: Double = 0
     private var pendingStatsSeconds: Double = 0
     private var currentMediaID: String?
-    private var playlist: [String] = []
+    @Published private(set) var playlist: [String] = []
     private var currentIndex: Int?
     private var remoteConfigured = false
     private let statsStore = PlaybackStatsStore.shared
+    private var queueLoadTask: Task<Void, Never>?
 
     init(api: APIClient = .shared) {
         self.api = api
@@ -64,6 +66,7 @@ final class PlayerViewModel: ObservableObject {
         playlist = ids
         currentIndex = ids.firstIndex(of: currentID)
         persistQueue(ids)
+        loadQueueDetails(ids)
     }
 
     func load(id: String, autoPlay: Bool) async {
@@ -113,6 +116,12 @@ final class PlayerViewModel: ObservableObject {
             setQueue(ids: queue, currentID: id)
         }
         await load(id: id, autoPlay: autoPlay)
+    }
+
+    func playFromQueue(id: String) {
+        guard let index = playlist.firstIndex(of: id) else { return }
+        currentIndex = index
+        Task { await load(id: id, autoPlay: true) }
     }
 
     func togglePlay() {
@@ -360,6 +369,27 @@ final class PlayerViewModel: ObservableObject {
             nextIndex = Int.random(in: 0..<playlist.count)
         }
         return nextIndex
+    }
+
+    private func loadQueueDetails(_ ids: [String]) {
+        queueLoadTask?.cancel()
+        guard !ids.isEmpty else {
+            queueDetails = []
+            return
+        }
+        let snapshot = ids
+        queueLoadTask = Task { [weak self] in
+            guard let self else { return }
+            var details: [MediaDetail] = []
+            for id in snapshot {
+                if Task.isCancelled { return }
+                if let detail = try? await api.fetchMediaDetail(id: id) {
+                    details.append(detail)
+                }
+            }
+            if Task.isCancelled { return }
+            queueDetails = details
+        }
     }
 
     private func persistQueue(_ ids: [String]) {

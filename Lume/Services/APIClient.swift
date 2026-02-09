@@ -12,6 +12,12 @@ final class APIClient {
     var authorizationToken: String?
 
     private let library: LocalLibraryStore
+    private static let exportDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return formatter
+    }()
 
     init(library: LocalLibraryStore = .shared) {
         self.library = library
@@ -28,6 +34,15 @@ final class APIClient {
 
     func importJSON(url: URL) async throws -> ImportReport {
         try await library.importJSON(from: url)
+    }
+
+    func exportJSONFile() async throws -> URL {
+        let data = try await library.exportJSON()
+        let timestamp = Self.exportDateFormatter.string(from: Date())
+        let fileName = "lume-library-\(timestamp).json"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+        try data.write(to: url, options: [.atomic])
+        return url
     }
 
     func deleteMedia(id: String) async throws {

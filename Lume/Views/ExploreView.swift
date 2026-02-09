@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 struct ExploreView: View {
@@ -9,6 +10,9 @@ struct ExploreView: View {
     @EnvironmentObject private var playback: PlayerViewModel
     @State private var showImporter = false
     @AppStorage("lume.adminModeEnabled") private var isAdminMode = false
+    @State private var shareItem: ShareItem?
+    @State private var exportError: String?
+    @State private var isExporting = false
     @State private var pendingDelete: MediaItem?
     @State private var showDeleteAlert = false
     @State private var favoriteTarget: MediaItem?
@@ -139,6 +143,9 @@ struct ExploreView: View {
             .sheet(item: $favoriteTarget) { item in
                 FavoritesPickerSheet(mediaID: item.id, mediaType: item.type)
             }
+            .sheet(item: $shareItem) { item in
+                ShareSheet(items: [item.url])
+            }
             .navigationDestination(item: $selectedFavoriteGroup) { group in
                 FavoritesListView(group: group)
             }
@@ -149,6 +156,13 @@ struct ExploreView: View {
                 CreateFavoriteGroupSheet { name, type in
                     Task { await favoritesViewModel.createGroup(name: name, mediaType: type) }
                 }
+            }
+            .alert("Export failed", isPresented: Binding(get: { exportError != nil }, set: { isPresented in
+                if !isPresented { exportError = nil }
+            })) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(exportError ?? "")
             }
             .onChange(of: showFavoritesList) { isShown in
                 guard isShown, favoritesViewModel.groups.isEmpty, !favoritesViewModel.isLoading else { return }
@@ -205,6 +219,26 @@ struct ExploreView: View {
                     .background(Color.white.opacity(0.06))
                     .clipShape(Circle())
             }
+
+            Button {
+                exportLibrary()
+            } label: {
+                ZStack {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .opacity(isExporting ? 0 : 1)
+                    if isExporting {
+                        ProgressView()
+                            .tint(.white)
+                    }
+                }
+                .frame(width: 40, height: 40)
+                .background(Color.white.opacity(0.06))
+                .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .disabled(isExporting)
 
             NavigationLink {
                 ProfileView()
@@ -389,6 +423,26 @@ struct ExploreView: View {
         }
     }
 
+    private func exportLibrary() {
+        guard !isExporting else { return }
+        isExporting = true
+        Task {
+            do {
+                let url = try await APIClient.shared.exportJSONFile()
+                await MainActor.run {
+                    shareItem = ShareItem(url: url)
+                }
+            } catch {
+                await MainActor.run {
+                    exportError = "Failed to export JSON."
+                }
+            }
+            await MainActor.run {
+                isExporting = false
+            }
+        }
+    }
+
     private var emptyState: some View {
         VStack(spacing: 12) {
             Text("No media imported yet")
@@ -414,6 +468,21 @@ struct ExploreView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)
     }
+}
+
+private struct ShareItem: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
+private struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 private struct ExploreFavoriteGroupRow: View {

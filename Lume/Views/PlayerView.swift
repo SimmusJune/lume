@@ -1,5 +1,6 @@
 import AVKit
 import SwiftUI
+import UIKit
 
 struct PlayerView: View {
     let mediaID: String
@@ -15,6 +16,10 @@ struct PlayerView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var viewModel: PlayerViewModel
     @State private var showFavoritesPicker = false
+    @State private var showQueue = false
+    @State private var shareItem: ShareItem?
+    @State private var exportError: String?
+    @State private var isExporting = false
     @State private var dragOffset: CGFloat = 0
 
     var body: some View {
@@ -88,6 +93,20 @@ struct PlayerView: View {
                     .presentationDetents([.medium])
             }
         }
+        .sheet(isPresented: $showQueue) {
+            QueueSheet()
+                .environmentObject(viewModel)
+        }
+        .sheet(item: $shareItem) { item in
+            ShareSheet(items: [item.url])
+        }
+        .alert("Export failed", isPresented: Binding(get: { exportError != nil }, set: { isPresented in
+            if !isPresented { exportError = nil }
+        })) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(exportError ?? "")
+        }
     }
 
     private var topBar: some View {
@@ -131,14 +150,40 @@ struct PlayerView: View {
             }
 
             Button {
+                guard !isExporting else { return }
+                isExporting = true
+                Task {
+                    do {
+                        let url = try await APIClient.shared.exportJSONFile()
+                        await MainActor.run {
+                            shareItem = ShareItem(url: url)
+                        }
+                    } catch {
+                        await MainActor.run {
+                            exportError = "Failed to export JSON."
+                        }
+                    }
+                    await MainActor.run {
+                        isExporting = false
+                    }
+                }
             } label: {
-                Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color(hex: "2a2d31"))
-                    .frame(width: 36, height: 36)
-                    .background(Color.white.opacity(0.7))
-                    .clipShape(Circle())
+                ZStack {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color(hex: "2a2d31"))
+                        .opacity(isExporting ? 0 : 1)
+                    if isExporting {
+                        ProgressView()
+                            .tint(Color(hex: "2a2d31"))
+                    }
+                }
+                .frame(width: 36, height: 36)
+                .background(Color.white.opacity(0.7))
+                .clipShape(Circle())
             }
+            .buttonStyle(.plain)
+            .disabled(isExporting)
         }
     }
 
@@ -272,6 +317,7 @@ struct PlayerView: View {
             }
 
             Button {
+                showQueue = true
             } label: {
                 Image(systemName: "list.bullet")
             }
@@ -331,6 +377,169 @@ private struct VinylRecordView: View {
                 .offset(x: 90, y: -70)
         }
     }
+}
+
+private struct QueueSheet: View {
+    @EnvironmentObject private var viewModel: PlayerViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Capsule()
+                .fill(Color(hex: "d0d3d8").opacity(0.8))
+                .frame(width: 42, height: 5)
+                .padding(.top, 8)
+
+            HStack {
+                Text("播放列表")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color(hex: "2a2d31"))
+
+                Spacer()
+
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Color(hex: "2a2d31"))
+                        .frame(width: 28, height: 28)
+                        .background(Color.white.opacity(0.7))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16)
+
+            if viewModel.playlist.isEmpty {
+                Spacer()
+                Text("暂无播放列表")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Color(hex: "6b7077"))
+                Spacer()
+            } else if viewModel.queueDetails.isEmpty {
+                Spacer()
+                ProgressView("加载中...")
+                    .font(.system(size: 14, weight: .medium))
+                    .tint(Color(hex: "2a2d31"))
+                Spacer()
+            } else {
+                ScrollView {
+                    VStack(spacing: 10) {
+                        ForEach(viewModel.queueDetails, id: \.id) { detail in
+                            QueueRow(
+                                detail: detail,
+                                isCurrent: viewModel.detail?.id == detail.id,
+                                onTap: { viewModel.playFromQueue(id: detail.id) }
+                            )
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 16)
+                }
+            }
+        }
+        .padding(.bottom, 8)
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.hidden)
+        .background(Color(hex: "f6f2ec"))
+    }
+}
+
+private struct QueueRow: View {
+    let detail: MediaDetail
+    let isCurrent: Bool
+    let onTap: () -> Void
+
+    var body: some View {
+        Button {
+            onTap()
+        } label: {
+            HStack(spacing: 12) {
+                thumbnail
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(detail.title)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color(hex: "2a2d31"))
+                        .lineLimit(1)
+
+                    HStack(spacing: 6) {
+                        Text(detail.subtitle?.isEmpty == false ? detail.subtitle! : (detail.type == .audio ? "Music" : "Video"))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Color(hex: "7c8188"))
+                            .lineLimit(1)
+
+                        Text(durationText(detail.durationMS))
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color(hex: "7c8188"))
+                    }
+                }
+
+                Spacer()
+
+                if isCurrent {
+                    Text("正在播放")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color(hex: "2a2d31"))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule()
+                                .fill(Color(hex: "9dff85"))
+                        )
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(Color.white.opacity(isCurrent ? 0.95 : 0.75))
+                    .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 4)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var thumbnail: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.black.opacity(0.08))
+
+            CachedAsyncImage(url: detail.thumbURL) { image in
+                image
+                    .resizable()
+                    .scaledToFill()
+            } placeholder: {
+                Image(systemName: detail.type == .audio ? "music.note" : "film")
+                    .foregroundStyle(Color.black.opacity(0.6))
+            }
+        }
+        .frame(width: 44, height: 44)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func durationText(_ ms: Int) -> String {
+        let totalSeconds = ms / 1000
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+}
+
+private struct ShareItem: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
+private struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 private struct ToneArmView: View {
