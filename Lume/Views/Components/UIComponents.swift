@@ -35,20 +35,20 @@ struct MediaCard: View {
                         .foregroundStyle(.white)
                         .lineLimit(1)
                 }
+
+                HStack(spacing: 8) {
+                    Text(item.type == .audio ? "Music" : "Video")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.white.opacity(0.65))
+                        .lineLimit(1)
+
+                    Text(durationText(item.durationMS))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color.white.opacity(0.7))
+                }
             }
 
             Spacer(minLength: 0)
-
-            VStack(alignment: .trailing, spacing: 6) {
-                Text(item.type == .audio ? "Music" : "Video")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.65))
-                    .lineLimit(1)
-
-                Text(durationText(item.durationMS))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.white.opacity(0.7))
-            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)

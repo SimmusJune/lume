@@ -43,10 +43,13 @@ final class PlayerViewModel: ObservableObject {
     private var itemStatusObserver: NSKeyValueObservation?
     private var itemDurationObserver: NSKeyValueObservation?
     private var lastProgressSentAt: Double = 0
+    private var lastStatsPosition: Double = 0
+    private var pendingStatsSeconds: Double = 0
     private var currentMediaID: String?
     private var playlist: [String] = []
     private var currentIndex: Int?
     private var remoteConfigured = false
+    private let statsStore = PlaybackStatsStore.shared
 
     init(api: APIClient = .shared) {
         self.api = api
@@ -107,6 +110,7 @@ final class PlayerViewModel: ObservableObject {
     func seek(to seconds: Double) {
         let time = CMTime(seconds: seconds, preferredTimescale: 600)
         player.seek(to: time)
+        lastStatsPosition = seconds
         NowPlayingManager.updatePlayback(elapsed: seconds, duration: durationSeconds, isPlaying: isPlaying)
     }
 
@@ -215,12 +219,15 @@ final class PlayerViewModel: ObservableObject {
         }
         itemStatusObserver = nil
         itemDurationObserver = nil
+        lastStatsPosition = 0
+        pendingStatsSeconds = 0
 
         let interval = CMTime(seconds: 1, preferredTimescale: 600)
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             guard let self else { return }
             positionSeconds = time.seconds
             updateDurationIfNeeded(from: item)
+            recordPlaybackStats(currentPosition: time.seconds)
             maybeSendProgress()
         }
 
@@ -269,6 +276,24 @@ final class PlayerViewModel: ObservableObject {
             Task { await sendProgress(event: nil) }
         }
         NowPlayingManager.updatePlayback(elapsed: now, duration: durationSeconds, isPlaying: isPlaying)
+    }
+
+    private func recordPlaybackStats(currentPosition: Double) {
+        guard isPlaying else {
+            lastStatsPosition = currentPosition
+            return
+        }
+        let delta = currentPosition - lastStatsPosition
+        lastStatsPosition = currentPosition
+        guard delta > 0 else { return }
+        if delta > 3 {
+            return
+        }
+        pendingStatsSeconds += delta
+        let wholeSeconds = Int(pendingStatsSeconds)
+        guard wholeSeconds > 0 else { return }
+        pendingStatsSeconds -= Double(wholeSeconds)
+        statsStore.recordPlayback(seconds: wholeSeconds)
     }
 
     private func sendProgress(event: String?) async {

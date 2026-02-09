@@ -183,7 +183,7 @@ struct ExploreView: View {
             Button {
                 showImporter = true
             } label: {
-                Image(systemName: "tray.and.arrow.down")
+                Image(systemName: "tray.and.arrow.up")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(width: 40, height: 40)
@@ -191,16 +191,8 @@ struct ExploreView: View {
                     .clipShape(Circle())
             }
 
-            Menu {
-                if let user = auth.user {
-                    Text(user.displayName)
-                    if let email = user.email {
-                        Text(email)
-                    }
-                }
-                Button("Sign Out", role: .destructive) {
-                    auth.signOut()
-                }
+            NavigationLink {
+                ProfileView()
             } label: {
                 Image(systemName: "person.crop.circle")
                     .font(.system(size: 18, weight: .semibold))
@@ -209,6 +201,7 @@ struct ExploreView: View {
                     .background(Color.white.opacity(0.06))
                     .clipShape(Circle())
             }
+            .buttonStyle(.plain)
         }
     }
 
