@@ -15,7 +15,7 @@ struct MiniPlayerBar: View {
                     .foregroundStyle(Color(hex: "22252a"))
                     .lineLimit(1)
 
-                Text(hasDetail ? "Now Playing" : "选择一首歌开始")
+                Text(hasDetail ? viewModel.playOrigin.label : "选择一首歌开始")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Color(hex: "7c8188"))
             }

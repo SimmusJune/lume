@@ -28,6 +28,34 @@ final class PlayerViewModel: ObservableObject {
         }
     }
 
+    enum PlayOrigin: Equatable {
+        case favorites(name: String?)
+        case playlist(name: String?)
+        case library
+        case unknown
+
+        var label: String {
+            switch self {
+            case .favorites(let name):
+                return format(prefix: "来自收藏", name: name)
+            case .playlist(let name):
+                return format(prefix: "来自歌单", name: name)
+            case .library:
+                return "来自本地库"
+            case .unknown:
+                return "播放中"
+            }
+        }
+
+        private func format(prefix: String, name: String?) -> String {
+            let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if trimmed.isEmpty {
+                return prefix
+            }
+            return "\(prefix) · \(trimmed)"
+        }
+    }
+
     @Published var player = AVPlayer()
     @Published var detail: MediaDetail?
     @Published var isPlaying = false
@@ -38,10 +66,13 @@ final class PlayerViewModel: ObservableObject {
     @Published var isMiniVisible = false
     @Published var presentExpanded = false
     @Published var playMode: PlayMode = .sequential
+    @Published private(set) var playOrigin: PlayOrigin = .unknown
     @Published private(set) var queueDetails: [MediaDetail] = []
 
     @AppStorage("lume.lastPlayedMediaID") private var lastPlayedMediaID = ""
     @AppStorage("lume.lastPlayedQueue") private var lastPlayedQueue = ""
+    @AppStorage("lume.lastPlayedOriginType") private var lastPlayedOriginType = ""
+    @AppStorage("lume.lastPlayedOriginName") private var lastPlayedOriginName = ""
 
     private let api: APIClient
     private var timeObserver: Any?
@@ -62,9 +93,11 @@ final class PlayerViewModel: ObservableObject {
         configureRemoteCommands()
     }
 
-    func setQueue(ids: [String], currentID: String) {
+    func setQueue(ids: [String], currentID: String, origin: PlayOrigin = .unknown) {
         playlist = ids
         currentIndex = ids.firstIndex(of: currentID)
+        playOrigin = origin
+        persistOrigin(origin)
         persistQueue(ids)
         loadQueueDetails(ids)
     }
@@ -113,7 +146,7 @@ final class PlayerViewModel: ObservableObject {
         guard !id.isEmpty else { return }
         guard detail == nil else { return }
         if let queue = restoreQueue(), queue.contains(id) {
-            setQueue(ids: queue, currentID: id)
+            setQueue(ids: queue, currentID: id, origin: restoreOrigin())
         }
         await load(id: id, autoPlay: autoPlay)
     }
@@ -399,6 +432,38 @@ final class PlayerViewModel: ObservableObject {
         }
         if let data = try? JSONEncoder().encode(ids) {
             lastPlayedQueue = String(data: data, encoding: .utf8) ?? ""
+        }
+    }
+
+    private func persistOrigin(_ origin: PlayOrigin) {
+        switch origin {
+        case .favorites(let name):
+            lastPlayedOriginType = "favorites"
+            lastPlayedOriginName = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        case .playlist(let name):
+            lastPlayedOriginType = "playlist"
+            lastPlayedOriginName = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        case .library:
+            lastPlayedOriginType = "library"
+            lastPlayedOriginName = ""
+        case .unknown:
+            lastPlayedOriginType = ""
+            lastPlayedOriginName = ""
+        }
+    }
+
+    private func restoreOrigin() -> PlayOrigin {
+        let trimmedName = lastPlayedOriginName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name: String? = trimmedName.isEmpty ? nil : trimmedName
+        switch lastPlayedOriginType {
+        case "favorites":
+            return .favorites(name: name)
+        case "playlist":
+            return .playlist(name: name)
+        case "library":
+            return .library
+        default:
+            return .unknown
         }
     }
 

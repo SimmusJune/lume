@@ -76,7 +76,7 @@ struct ExploreView: View {
                                             })
                                             .contentShape(Rectangle())
                                             .onTapGesture {
-                                                play(item: item, playlist: viewModel.items.map(\.id))
+                                                play(item: item)
                                             }
 
                                             if isAdminMode {
@@ -107,7 +107,7 @@ struct ExploreView: View {
                 }
             }
             .navigationDestination(for: MediaItem.self) { item in
-                PlayerView(mediaID: item.id, autoPlay: false, playlist: viewModel.items.map(\.id))
+                PlayerView(mediaID: item.id, autoPlay: false)
             }
             .task {
                 if viewModel.items.isEmpty {
@@ -175,9 +175,14 @@ struct ExploreView: View {
         }
     }
 
-    private func play(item: MediaItem, playlist: [String]) {
-        playback.setQueue(ids: playlist, currentID: item.id)
+    private func play(item: MediaItem) {
+        let origin = playback.playOrigin
         Task {
+            if origin != .library {
+                let libraryQueue = await viewModel.fetchLibraryQueueIDs()
+                let queue = libraryQueue.isEmpty ? [item.id] : libraryQueue
+                playback.setQueue(ids: queue, currentID: item.id, origin: .library)
+            }
             await playback.load(id: item.id, autoPlay: true)
             playback.isMiniVisible = true
             playback.presentExpanded = false
@@ -594,7 +599,7 @@ private struct ExploreTagPlaylistDetailView: View {
     }
 
     private func play(item: MediaItem, playlist: [String]) {
-        playback.setQueue(ids: playlist, currentID: item.id)
+        playback.setQueue(ids: playlist, currentID: item.id, origin: .playlist(name: tag))
         Task {
             await playback.load(id: item.id, autoPlay: true)
             playback.isMiniVisible = true

@@ -63,7 +63,7 @@ struct FavoritesListView: View {
     }
 
     private func play(item: FavoriteListItem, playlist: [String]) {
-        playback.setQueue(ids: playlist, currentID: item.mediaID)
+        playback.setQueue(ids: playlist, currentID: item.mediaID, origin: .favorites(name: viewModel.group.name))
         Task {
             await playback.load(id: item.mediaID, autoPlay: true)
             playback.isMiniVisible = true

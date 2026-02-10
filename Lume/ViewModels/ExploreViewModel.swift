@@ -53,6 +53,15 @@ final class ExploreViewModel: ObservableObject {
         await load()
     }
 
+    func fetchLibraryQueueIDs() async -> [String] {
+        do {
+            let response = try await api.fetchMediaList(type: selectedFilter.mediaType, keyword: nil)
+            return response.items.map(\.id)
+        } catch {
+            return []
+        }
+    }
+
     func importJSON(from url: URL) async {
         isLoading = true
         errorMessage = nil

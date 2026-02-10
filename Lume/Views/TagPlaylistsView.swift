@@ -136,7 +136,7 @@ private struct TagPlaylistDetailView: View {
     }
 
     private func play(item: MediaItem, playlist: [String]) {
-        playback.setQueue(ids: playlist, currentID: item.id)
+        playback.setQueue(ids: playlist, currentID: item.id, origin: .playlist(name: tag))
         Task {
             await playback.load(id: item.id, autoPlay: true)
             playback.isMiniVisible = true

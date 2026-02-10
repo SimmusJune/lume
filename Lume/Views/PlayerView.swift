@@ -57,7 +57,7 @@ struct PlayerView: View {
         .onAppear {
             viewModel.isMiniVisible = false
             if let playlist {
-                viewModel.setQueue(ids: playlist, currentID: mediaID)
+                viewModel.setQueue(ids: playlist, currentID: mediaID, origin: .library)
             }
         }
         .onDisappear {
