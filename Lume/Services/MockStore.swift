@@ -169,8 +169,8 @@ actor LocalLibraryStore {
 
     func importJSON(from url: URL) throws -> ImportReport {
         let data = try Data(contentsOf: url)
-        let records = try decodeMediaImportRecords(from: data)
-        guard !records.isEmpty else { return ImportReport(inserted: 0, updated: 0, skipped: 0) }
+        let payload = try decodeLibraryImportPayload(from: data)
+        let records = payload.items
 
         var inserted = 0
         var updated = 0
@@ -224,9 +224,14 @@ actor LocalLibraryStore {
             touchedIDs.insert(id)
         }
 
-        if inserted > 0 || updated > 0 {
+        let didChangeMedia = inserted > 0 || updated > 0
+        if didChangeMedia {
             rebuildIndex()
             refreshFavoriteItems(for: touchedIDs)
+        }
+
+        let didChangeFavorites = importFavorites(from: payload.favoriteGroups)
+        if didChangeMedia || didChangeFavorites {
             try persist()
         }
 
@@ -247,7 +252,21 @@ actor LocalLibraryStore {
                 status: record.status
             )
         }
-        return try encoder.encode(records)
+        let favoriteGroups = state.favoriteGroups.map { group in
+            let items = state.favoriteItemsByGroup[group.id]?.map { $0.mediaID } ?? []
+            return FavoriteGroupExportRecord(
+                id: group.id,
+                name: group.name,
+                mediaType: group.mediaType.rawValue,
+                items: items
+            )
+        }
+        let payload = LibraryExportPayload(
+            version: 1,
+            items: records,
+            favoriteGroups: favoriteGroups
+        )
+        return try encoder.encode(payload)
     }
 
     func deleteMedia(id: String) throws {
@@ -461,13 +480,13 @@ actor LocalLibraryStore {
         return total
     }
 
-    private func decodeMediaImportRecords(from data: Data) throws -> [MediaImportRecord] {
+    private func decodeLibraryImportPayload(from data: Data) throws -> LibraryImportPayload {
         let decoder = JSONDecoder()
         if let records = try? decoder.decode([MediaImportRecord].self, from: data) {
-            return records
+            return LibraryImportPayload(version: nil, items: records, favoriteGroups: nil)
         }
-        if let payload = try? decoder.decode(MediaImportPayload.self, from: data) {
-            return payload.items
+        if let payload = try? decoder.decode(LibraryImportPayload.self, from: data) {
+            return payload
         }
         throw LibraryError.unreadableJSON
     }
@@ -504,6 +523,66 @@ actor LocalLibraryStore {
         }
         let ext = url.pathExtension.lowercased()
         return ext.isEmpty ? "unknown" : ext
+    }
+
+    private func importFavorites(from groups: [FavoriteGroupImportRecord]?) -> Bool {
+        guard let groups, !groups.isEmpty else { return false }
+
+        var changed = false
+        var importedSeeds: [FavoriteGroupSeed] = []
+        var importedIDs: Set<String> = []
+
+        for group in groups {
+            guard let id = normalizedNonEmpty(group.id) else { continue }
+            guard let type = parseType(group.mediaType) else { continue }
+            let name = normalizedNonEmpty(group.name) ?? "Favorites"
+            let seed = FavoriteGroupSeed(id: id, name: name, mediaType: type)
+            importedSeeds.append(seed)
+            importedIDs.insert(id)
+
+            if let mediaIDs = group.items {
+                let newItems = buildFavoriteItems(from: mediaIDs, mediaType: type)
+                if state.favoriteItemsByGroup[id] != newItems {
+                    state.favoriteItemsByGroup[id] = newItems
+                    changed = true
+                }
+            } else if state.favoriteItemsByGroup[id] == nil {
+                state.favoriteItemsByGroup[id] = []
+                changed = true
+            }
+        }
+
+        guard !importedSeeds.isEmpty else { return changed }
+        let mergedGroups = importedSeeds + state.favoriteGroups.filter { !importedIDs.contains($0.id) }
+        if mergedGroups != state.favoriteGroups {
+            state.favoriteGroups = mergedGroups
+            changed = true
+        }
+
+        return changed
+    }
+
+    private func buildFavoriteItems(from mediaIDs: [String], mediaType: MediaType) -> [FavoriteListItem] {
+        var seen: Set<String> = []
+        var items: [FavoriteListItem] = []
+        items.reserveCapacity(mediaIDs.count)
+
+        for rawID in mediaIDs {
+            let trimmed = rawID.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !seen.contains(trimmed) else { continue }
+            guard let record = recordsByID[trimmed] else { continue }
+            guard record.type == mediaType else { continue }
+            items.append(record.asFavoriteItem())
+            seen.insert(trimmed)
+        }
+
+        return items
+    }
+
+    private func normalizedNonEmpty(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 
@@ -579,8 +658,56 @@ private enum LibraryError: Error {
     case missingRequiredColumn(String)
 }
 
-private struct MediaImportPayload: Decodable {
+private struct LibraryExportPayload: Encodable {
+    let version: Int
+    let items: [MediaExportRecord]
+    let favoriteGroups: [FavoriteGroupExportRecord]
+
+    enum CodingKeys: String, CodingKey {
+        case version
+        case items
+        case favoriteGroups = "favorite_groups"
+    }
+}
+
+private struct LibraryImportPayload: Decodable {
+    let version: Int?
     let items: [MediaImportRecord]
+    let favoriteGroups: [FavoriteGroupImportRecord]?
+
+    enum CodingKeys: String, CodingKey {
+        case version
+        case items
+        case favoriteGroups = "favorite_groups"
+    }
+}
+
+private struct FavoriteGroupExportRecord: Encodable {
+    let id: String
+    let name: String
+    let mediaType: String
+    let items: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case mediaType = "media_type"
+        case items
+    }
+}
+
+private struct FavoriteGroupImportRecord: Decodable {
+    let id: String?
+    let name: String?
+    let mediaType: String?
+    let items: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case mediaType = "media_type"
+        case items
+    }
 }
 
 private struct MediaExportRecord: Encodable {

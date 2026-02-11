@@ -19,8 +19,6 @@ struct ExploreView: View {
     @State private var showFavoritesList = false
     @State private var showPlaylistsList = false
     @State private var showCreateFavoriteSheet = false
-    @State private var selectedFavoriteGroup: FavoriteGroup?
-    @State private var selectedTagGroup: TagPlaylistsViewModel.TagGroup?
 
     private let rowSpacing: CGFloat = 12
 
@@ -109,6 +107,12 @@ struct ExploreView: View {
             .navigationDestination(for: MediaItem.self) { item in
                 PlayerView(mediaID: item.id, autoPlay: false)
             }
+            .navigationDestination(for: FavoriteGroup.self) { group in
+                FavoritesListView(group: group)
+            }
+            .navigationDestination(for: TagPlaylistsViewModel.TagGroup.self) { group in
+                ExploreTagPlaylistDetailView(tag: group.tag, items: group.items)
+            }
             .task {
                 if viewModel.items.isEmpty {
                     await viewModel.load()
@@ -145,12 +149,6 @@ struct ExploreView: View {
             }
             .sheet(item: $shareItem) { item in
                 ShareSheet(items: [item.url])
-            }
-            .navigationDestination(item: $selectedFavoriteGroup) { group in
-                FavoritesListView(group: group)
-            }
-            .navigationDestination(item: $selectedTagGroup) { group in
-                ExploreTagPlaylistDetailView(tag: group.tag, items: group.items)
             }
             .sheet(isPresented: $showCreateFavoriteSheet) {
                 CreateFavoriteGroupSheet { name, type in
@@ -335,9 +333,7 @@ struct ExploreView: View {
             } else {
                 VStack(spacing: 10) {
                     ForEach(favoritesViewModel.groups) { group in
-                        Button {
-                            selectedFavoriteGroup = group
-                        } label: {
+                        NavigationLink(value: group) {
                             ExploreFavoriteGroupRow(group: group)
                         }
                         .buttonStyle(.plain)
@@ -376,9 +372,7 @@ struct ExploreView: View {
             } else {
                 VStack(spacing: 10) {
                     ForEach(playlistsViewModel.groups) { group in
-                        Button {
-                            selectedTagGroup = group
-                        } label: {
+                        NavigationLink(value: group) {
                             ExploreTagRow(tag: group.tag, count: group.items.count)
                         }
                         .buttonStyle(.plain)
