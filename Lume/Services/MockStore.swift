@@ -327,7 +327,7 @@ actor LocalLibraryStore {
         }
 
         let item = record.asFavoriteItem()
-        items.insert(item, at: 0)
+        items.append(item)
         state.favoriteItemsByGroup[groupID] = items
         try persist()
         return item
@@ -337,6 +337,29 @@ actor LocalLibraryStore {
         guard var items = state.favoriteItemsByGroup[groupID] else { return }
         items.removeAll { $0.mediaID == mediaID }
         state.favoriteItemsByGroup[groupID] = items
+        try persist()
+    }
+
+    func reorderItems(groupID: String, orderedMediaIDs: [String]) throws {
+        guard let currentItems = state.favoriteItemsByGroup[groupID], !currentItems.isEmpty else { return }
+
+        let itemsByMediaID = Dictionary(uniqueKeysWithValues: currentItems.map { ($0.mediaID, $0) })
+        var seen: Set<String> = []
+        var reordered: [FavoriteListItem] = []
+        reordered.reserveCapacity(currentItems.count)
+
+        for mediaID in orderedMediaIDs {
+            guard !seen.contains(mediaID), let item = itemsByMediaID[mediaID] else { continue }
+            reordered.append(item)
+            seen.insert(mediaID)
+        }
+
+        for item in currentItems where !seen.contains(item.mediaID) {
+            reordered.append(item)
+        }
+
+        guard reordered != currentItems else { return }
+        state.favoriteItemsByGroup[groupID] = reordered
         try persist()
     }
 

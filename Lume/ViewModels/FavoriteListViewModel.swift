@@ -36,4 +36,13 @@ final class FavoriteListViewModel: ObservableObject {
             errorMessage = "Failed to remove item."
         }
     }
+
+    func persistOrder() async {
+        do {
+            try await api.reorderFavoriteItems(groupID: group.id, orderedMediaIDs: items.map(\.mediaID))
+        } catch {
+            errorMessage = "Failed to reorder favorites."
+            await load()
+        }
+    }
 }

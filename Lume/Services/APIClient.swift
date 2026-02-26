@@ -78,4 +78,8 @@ final class APIClient {
         try await library.removeItem(groupID: groupID, mediaID: mediaID)
     }
 
+    func reorderFavoriteItems(groupID: String, orderedMediaIDs: [String]) async throws {
+        try await library.reorderItems(groupID: groupID, orderedMediaIDs: orderedMediaIDs)
+    }
+
 }

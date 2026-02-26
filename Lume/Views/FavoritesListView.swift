@@ -1,8 +1,10 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct FavoritesListView: View {
     @EnvironmentObject private var playback: PlayerViewModel
     @StateObject private var viewModel: FavoriteListViewModel
+    @State private var draggedItem: FavoriteListItem?
 
     init(group: FavoriteGroup) {
         _viewModel = StateObject(wrappedValue: FavoriteListViewModel(group: group))
@@ -47,8 +49,31 @@ struct FavoritesListView: View {
                                 .onTapGesture {
                                     play(item: item, playlist: playlist)
                                 }
+                                .opacity(draggedItem?.id == item.id ? 0.65 : 1)
+                                .onDrag {
+                                    draggedItem = item
+                                    return NSItemProvider(object: item.mediaID as NSString)
+                                }
+                                .onDrop(
+                                    of: [UTType.text],
+                                    delegate: FavoriteItemDropDelegate(
+                                        item: item,
+                                        items: $viewModel.items,
+                                        draggedItem: $draggedItem,
+                                        onCommit: persistOrder
+                                    )
+                                )
                             }
                         }
+                        .animation(.easeInOut(duration: 0.18), value: viewModel.items)
+                        .onDrop(
+                            of: [UTType.text],
+                            delegate: FavoritesListDropDelegate(
+                                items: $viewModel.items,
+                                draggedItem: $draggedItem,
+                                onCommit: persistOrder
+                            )
+                        )
                     }
                 }
                 .padding(.horizontal, 20)
@@ -71,6 +96,11 @@ struct FavoritesListView: View {
         }
     }
 
+    private func persistOrder(_ orderedMediaIDs: [String]) {
+        guard orderedMediaIDs == viewModel.items.map(\.mediaID) else { return }
+        Task { await viewModel.persistOrder() }
+    }
+
     private func mediaItem(from item: FavoriteListItem) -> MediaItem {
         MediaItem(
             id: item.mediaID,
@@ -81,6 +111,53 @@ struct FavoritesListView: View {
             status: "",
             tags: item.tags
         )
+    }
+}
+
+private struct FavoriteItemDropDelegate: DropDelegate {
+    let item: FavoriteListItem
+    @Binding var items: [FavoriteListItem]
+    @Binding var draggedItem: FavoriteListItem?
+    let onCommit: ([String]) -> Void
+
+    func dropEntered(info: DropInfo) {
+        guard let draggedItem, draggedItem != item else { return }
+        guard let fromIndex = items.firstIndex(of: draggedItem),
+              let toIndex = items.firstIndex(of: item) else { return }
+        guard fromIndex != toIndex else { return }
+
+        withAnimation {
+            items.move(
+                fromOffsets: IndexSet(integer: fromIndex),
+                toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex
+            )
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedItem = nil
+        onCommit(items.map(\.mediaID))
+        return true
+    }
+}
+
+private struct FavoritesListDropDelegate: DropDelegate {
+    @Binding var items: [FavoriteListItem]
+    @Binding var draggedItem: FavoriteListItem?
+    let onCommit: ([String]) -> Void
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedItem = nil
+        onCommit(items.map(\.mediaID))
+        return true
     }
 }
 
