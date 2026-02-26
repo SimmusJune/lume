@@ -78,6 +78,7 @@ final class PlayerViewModel: ObservableObject {
     private var timeObserver: Any?
     private var itemStatusObserver: NSKeyValueObservation?
     private var itemDurationObserver: NSKeyValueObservation?
+    private var itemDidFinishObserver: NSObjectProtocol?
     private var lastProgressSentAt: Double = 0
     private var lastStatsPosition: Double = 0
     private var pendingStatsSeconds: Double = 0
@@ -87,6 +88,7 @@ final class PlayerViewModel: ObservableObject {
     private var remoteConfigured = false
     private let statsStore = PlaybackStatsStore.shared
     private var queueLoadTask: Task<Void, Never>?
+    private var isAdvancingTrack = false
 
     init(api: APIClient = .shared) {
         self.api = api
@@ -194,7 +196,10 @@ final class PlayerViewModel: ObservableObject {
         }
         itemStatusObserver = nil
         itemDurationObserver = nil
-        NotificationCenter.default.removeObserver(self)
+        if let itemDidFinishObserver {
+            NotificationCenter.default.removeObserver(itemDidFinishObserver)
+            self.itemDidFinishObserver = nil
+        }
     }
 
     func nextTrack() {
@@ -280,6 +285,10 @@ final class PlayerViewModel: ObservableObject {
         }
         itemStatusObserver = nil
         itemDurationObserver = nil
+        if let itemDidFinishObserver {
+            NotificationCenter.default.removeObserver(itemDidFinishObserver)
+            self.itemDidFinishObserver = nil
+        }
         lastStatsPosition = 0
         pendingStatsSeconds = 0
 
@@ -304,12 +313,15 @@ final class PlayerViewModel: ObservableObject {
             updateDurationIfNeeded(from: item)
         }
 
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(itemDidFinish),
-            name: .AVPlayerItemDidPlayToEndTime,
-            object: item
-        )
+        itemDidFinishObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self else { return }
+            guard let finishedItem = notification.object as? AVPlayerItem else { return }
+            self.itemDidFinish(finishedItem)
+        }
     }
 
     private func updateDurationIfNeeded(from item: AVPlayerItem) {
@@ -323,7 +335,8 @@ final class PlayerViewModel: ObservableObject {
         }
     }
 
-    @objc private func itemDidFinish() {
+    private func itemDidFinish(_ item: AVPlayerItem) {
+        guard item === player.currentItem else { return }
         isPlaying = false
         NowPlayingManager.updatePlayback(elapsed: durationSeconds, duration: durationSeconds, isPlaying: false)
         Task { await sendProgress(event: "end") }
@@ -376,23 +389,33 @@ final class PlayerViewModel: ObservableObject {
 
     private func advanceTrack(auto: Bool) {
         guard let index = currentIndex, !playlist.isEmpty else { return }
+        guard !isAdvancingTrack else { return }
+        isAdvancingTrack = true
 
         if playMode == .singleLoop, auto {
-            Task { await load(id: playlist[index], autoPlay: true) }
+            loadAdvancingTrack(id: playlist[index])
             return
         }
 
         if playMode == .shuffle {
             let nextIndex = randomIndex(excluding: index)
             currentIndex = nextIndex
-            Task { await load(id: playlist[nextIndex], autoPlay: true) }
+            loadAdvancingTrack(id: playlist[nextIndex])
             return
         }
 
         let nextIndex = index + 1
         let wrappedIndex = nextIndex < playlist.count ? nextIndex : 0
         currentIndex = wrappedIndex
-        Task { await load(id: playlist[wrappedIndex], autoPlay: true) }
+        loadAdvancingTrack(id: playlist[wrappedIndex])
+    }
+
+    private func loadAdvancingTrack(id: String) {
+        Task { [weak self] in
+            guard let self else { return }
+            defer { isAdvancingTrack = false }
+            await load(id: id, autoPlay: true)
+        }
     }
 
     private func randomIndex(excluding index: Int) -> Int {
