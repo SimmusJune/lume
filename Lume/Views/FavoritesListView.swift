@@ -5,6 +5,7 @@ struct FavoritesListView: View {
     @EnvironmentObject private var playback: PlayerViewModel
     @StateObject private var viewModel: FavoriteListViewModel
     @State private var draggedItem: FavoriteListItem?
+    @State private var favoriteTarget: MediaItem?
 
     init(group: FavoriteGroup) {
         _viewModel = StateObject(wrappedValue: FavoriteListViewModel(group: group))
@@ -42,27 +43,37 @@ struct FavoritesListView: View {
                         let playlist = viewModel.items.map(\.mediaID)
                         LazyVStack(spacing: 12) {
                             ForEach(viewModel.items) { item in
-                                MediaCard(item: mediaItem(from: item), onFavorite: {
-                                    Task { await viewModel.remove(mediaID: item.mediaID) }
-                                })
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    play(item: item, playlist: playlist)
-                                }
-                                .opacity(draggedItem?.id == item.id ? 0.65 : 1)
-                                .onDrag {
-                                    draggedItem = item
-                                    return NSItemProvider(object: item.mediaID as NSString)
-                                }
-                                .onDrop(
-                                    of: [UTType.text],
-                                    delegate: FavoriteItemDropDelegate(
-                                        item: item,
-                                        items: $viewModel.items,
-                                        draggedItem: $draggedItem,
-                                        onCommit: persistOrder
+                                if viewModel.supportsEditing {
+                                    MediaCard(item: mediaItem(from: item), onFavorite: {
+                                        Task { await viewModel.remove(mediaID: item.mediaID) }
+                                    })
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        play(item: item, playlist: playlist)
+                                    }
+                                    .opacity(draggedItem?.id == item.id ? 0.65 : 1)
+                                    .onDrag {
+                                        draggedItem = item
+                                        return NSItemProvider(object: item.mediaID as NSString)
+                                    }
+                                    .onDrop(
+                                        of: [UTType.text],
+                                        delegate: FavoriteItemDropDelegate(
+                                            item: item,
+                                            items: $viewModel.items,
+                                            draggedItem: $draggedItem,
+                                            onCommit: persistOrder
+                                        )
                                     )
-                                )
+                                } else {
+                                    MediaCard(item: mediaItem(from: item), onFavorite: {
+                                        favoriteTarget = mediaItem(from: item)
+                                    })
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        play(item: item, playlist: playlist)
+                                    }
+                                }
                             }
                         }
                         .animation(.easeInOut(duration: 0.18), value: viewModel.items)
@@ -71,7 +82,8 @@ struct FavoritesListView: View {
                             delegate: FavoritesListDropDelegate(
                                 items: $viewModel.items,
                                 draggedItem: $draggedItem,
-                                onCommit: persistOrder
+                                onCommit: persistOrder,
+                                isEnabled: viewModel.supportsEditing
                             )
                         )
                     }
@@ -84,6 +96,11 @@ struct FavoritesListView: View {
         .background(NavigationPopGestureDisabled())
         .task {
             await viewModel.load()
+        }
+        .sheet(item: $favoriteTarget, onDismiss: {
+            Task { await viewModel.load() }
+        }) { item in
+            FavoritesPickerSheet(mediaID: item.id, mediaType: item.type)
         }
     }
 
@@ -149,12 +166,15 @@ private struct FavoritesListDropDelegate: DropDelegate {
     @Binding var items: [FavoriteListItem]
     @Binding var draggedItem: FavoriteListItem?
     let onCommit: ([String]) -> Void
+    let isEnabled: Bool
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
+        guard isEnabled else { return nil }
+        return DropProposal(operation: .move)
     }
 
     func performDrop(info: DropInfo) -> Bool {
+        guard isEnabled else { return false }
         draggedItem = nil
         onCommit(items.map(\.mediaID))
         return true

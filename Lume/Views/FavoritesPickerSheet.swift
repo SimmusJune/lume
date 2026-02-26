@@ -12,7 +12,7 @@ struct FavoritesPickerSheet: View {
         NavigationStack {
             List {
                 Section {
-                    ForEach(viewModel.groups.filter { $0.mediaType == mediaType }) { group in
+                    ForEach(viewModel.groups.filter { $0.mediaType == mediaType && !$0.isUnfavoritedAudioGroup }) { group in
                         Button {
                             Task { await add(to: group) }
                         } label: {

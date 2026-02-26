@@ -338,10 +338,12 @@ struct ExploreView: View {
                         }
                         .buttonStyle(.plain)
                         .contextMenu {
-                            Button(role: .destructive) {
-                                Task { await favoritesViewModel.deleteGroup(id: group.id) }
-                            } label: {
-                                Label("Delete", systemImage: "trash")
+                            if !group.isUnfavoritedAudioGroup {
+                                Button(role: .destructive) {
+                                    Task { await favoritesViewModel.deleteGroup(id: group.id) }
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
                             }
                         }
                     }

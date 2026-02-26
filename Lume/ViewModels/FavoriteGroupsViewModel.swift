@@ -17,7 +17,14 @@ final class FavoriteGroupsViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
         do {
-            groups = try await api.fetchFavoriteGroups()
+            async let loadedGroups = api.fetchFavoriteGroups()
+            async let unfavoritedItems = api.fetchUnfavoritedAudioItems()
+
+            let favoriteGroups = try await loadedGroups
+            let unfavoritedAudioItems = try await unfavoritedItems
+            let unfavoritedCount = unfavoritedAudioItems.count
+
+            groups = [FavoriteGroup.unfavoritedAudioGroup(count: unfavoritedCount)] + favoriteGroups
         } catch {
             errorMessage = "Failed to load favorites."
         }
@@ -27,17 +34,18 @@ final class FavoriteGroupsViewModel: ObservableObject {
     func createGroup(name: String, mediaType: MediaType) async {
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         do {
-            let group = try await api.createFavoriteGroup(name: name, mediaType: mediaType)
-            groups.insert(group, at: 0)
+            _ = try await api.createFavoriteGroup(name: name, mediaType: mediaType)
+            await load()
         } catch {
             errorMessage = "Failed to create group."
         }
     }
 
     func deleteGroup(id: String) async {
+        guard id != FavoriteGroup.unfavoritedAudioGroupID else { return }
         do {
             try await api.deleteFavoriteGroup(id: id)
-            groups.removeAll { $0.id == id }
+            await load()
         } catch {
             errorMessage = "Failed to delete group."
         }

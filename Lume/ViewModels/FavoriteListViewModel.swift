@@ -4,6 +4,7 @@ import Foundation
 @MainActor
 final class FavoriteListViewModel: ObservableObject {
     let group: FavoriteGroup
+    var supportsEditing: Bool { !group.isUnfavoritedAudioGroup }
 
     @Published var items: [FavoriteListItem] = []
     @Published var isLoading = false
@@ -20,8 +21,12 @@ final class FavoriteListViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
         do {
-            let response = try await api.fetchFavoriteItems(groupID: group.id)
-            items = response.items
+            if group.isUnfavoritedAudioGroup {
+                items = try await api.fetchUnfavoritedAudioItems()
+            } else {
+                let response = try await api.fetchFavoriteItems(groupID: group.id)
+                items = response.items
+            }
         } catch {
             errorMessage = "Failed to load favorites."
         }
@@ -29,6 +34,7 @@ final class FavoriteListViewModel: ObservableObject {
     }
 
     func remove(mediaID: String) async {
+        guard supportsEditing else { return }
         do {
             try await api.removeFavoriteItem(groupID: group.id, mediaID: mediaID)
             items.removeAll { $0.mediaID == mediaID }
@@ -38,6 +44,7 @@ final class FavoriteListViewModel: ObservableObject {
     }
 
     func persistOrder() async {
+        guard supportsEditing else { return }
         do {
             try await api.reorderFavoriteItems(groupID: group.id, orderedMediaIDs: items.map(\.mediaID))
         } catch {

@@ -50,10 +50,12 @@ struct FavoritesGroupsView: View {
                                     FavoriteGroupRow(group: group)
                                 }
                                 .contextMenu {
-                                    Button(role: .destructive) {
-                                        Task { await viewModel.deleteGroup(id: group.id) }
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
+                                    if !group.isUnfavoritedAudioGroup {
+                                        Button(role: .destructive) {
+                                            Task { await viewModel.deleteGroup(id: group.id) }
+                                        } label: {
+                                            Label("Delete", systemImage: "trash")
+                                        }
                                     }
                                 }
                             }
