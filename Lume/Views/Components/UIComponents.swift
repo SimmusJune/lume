@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct ChipView: View {
     let title: String
@@ -158,6 +159,134 @@ struct MediaCard: View {
         let minutes = totalSeconds / 60
         let seconds = totalSeconds % 60
         return String(format: "%d:%02d", minutes, seconds)
+    }
+}
+
+struct SwipeToDeleteRow<Content: View>: View {
+    private let actionWidth: CGFloat = 86
+    let onDeleteTapped: () -> Void
+    let content: Content
+
+    @State private var offsetX: CGFloat = 0
+    @State private var dragStartOffset: CGFloat = 0
+
+    init(onDeleteTapped: @escaping () -> Void, @ViewBuilder content: () -> Content) {
+        self.onDeleteTapped = onDeleteTapped
+        self.content = content()
+    }
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            Button {
+                withAnimation(.easeOut(duration: 0.18)) {
+                    offsetX = 0
+                    dragStartOffset = 0
+                }
+                onDeleteTapped()
+            } label: {
+                Text("删除")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: actionWidth)
+                    .frame(maxHeight: .infinity)
+                    .background(Color.red)
+            }
+            .buttonStyle(.plain)
+            // Keep delete action fully offscreen until row is swiped left.
+            .offset(x: actionWidth + offsetX)
+
+            content
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .offset(x: offsetX)
+                .overlay(
+                    HorizontalPanGestureLayer(
+                        onBegan: {
+                            dragStartOffset = offsetX
+                        },
+                        onChanged: { translationX in
+                            let proposed = dragStartOffset + translationX
+                            offsetX = min(0, max(-actionWidth, proposed))
+                        },
+                        onEnded: { translationX, velocityX in
+                            let projected = dragStartOffset + translationX + velocityX * 0.02
+                            let target: CGFloat = projected <= (-actionWidth * 0.45) ? -actionWidth : 0
+                            withAnimation(.easeOut(duration: 0.18)) {
+                                offsetX = target
+                                dragStartOffset = target
+                            }
+                        }
+                    )
+                )
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .clipped()
+    }
+}
+
+private struct HorizontalPanGestureLayer: UIViewRepresentable {
+    let onBegan: () -> Void
+    let onChanged: (CGFloat) -> Void
+    let onEnded: (CGFloat, CGFloat) -> Void
+
+    func makeUIView(context: Context) -> PanCaptureView {
+        let view = PanCaptureView()
+        let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePan(_:)))
+        pan.delegate = context.coordinator
+        pan.cancelsTouchesInView = false
+        view.addGestureRecognizer(pan)
+        return view
+    }
+
+    func updateUIView(_ uiView: PanCaptureView, context: Context) {
+        context.coordinator.parent = self
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var parent: HorizontalPanGestureLayer
+
+        init(parent: HorizontalPanGestureLayer) {
+            self.parent = parent
+        }
+
+        @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
+            let translationX = gesture.translation(in: gesture.view).x
+            let velocityX = gesture.velocity(in: gesture.view).x
+
+            switch gesture.state {
+            case .began:
+                parent.onBegan()
+            case .changed:
+                parent.onChanged(translationX)
+            case .ended, .cancelled, .failed:
+                parent.onEnded(translationX, velocityX)
+            default:
+                break
+            }
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let pan = gestureRecognizer as? UIPanGestureRecognizer,
+                  let view = gestureRecognizer.view else {
+                return true
+            }
+            let velocity = pan.velocity(in: view)
+            return abs(velocity.x) > abs(velocity.y) * 1.15
+        }
+    }
+}
+
+private final class PanCaptureView: UIView {
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 }
 

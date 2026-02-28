@@ -92,9 +92,16 @@ private struct TagRow: View {
 
 private struct TagPlaylistDetailView: View {
     let tag: String
-    let items: [MediaItem]
     @EnvironmentObject private var playback: PlayerViewModel
+    @State private var items: [MediaItem]
     @State private var favoriteTarget: MediaItem?
+    @State private var pendingDelete: MediaItem?
+    @State private var showDeleteAlert = false
+
+    init(tag: String, items: [MediaItem]) {
+        self.tag = tag
+        _items = State(initialValue: items)
+    }
 
     var body: some View {
         ZStack {
@@ -113,12 +120,17 @@ private struct TagPlaylistDetailView: View {
 
                     LazyVStack(spacing: 12) {
                         ForEach(items) { item in
-                            MediaCard(item: item, onFavorite: {
-                                favoriteTarget = item
-                            })
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                play(item: item, playlist: items.map(\.id))
+                            SwipeToDeleteRow(onDeleteTapped: {
+                                pendingDelete = item
+                                showDeleteAlert = true
+                            }) {
+                                MediaCard(item: item, onFavorite: {
+                                    favoriteTarget = item
+                                })
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    play(item: item, playlist: items.map(\.id))
+                                }
                             }
                         }
                     }
@@ -133,6 +145,22 @@ private struct TagPlaylistDetailView: View {
         .sheet(item: $favoriteTarget) { item in
             FavoritesPickerSheet(mediaID: item.id, mediaType: item.type)
         }
+        .alert("删除该条目？", isPresented: $showDeleteAlert) {
+            Button("删除", role: .destructive) {
+                guard let item = pendingDelete else { return }
+                Task { await delete(item: item) }
+                pendingDelete = nil
+            }
+            Button("取消", role: .cancel) {
+                pendingDelete = nil
+            }
+        } message: {
+            if let title = pendingDelete?.title, !title.isEmpty {
+                Text("删除后将从本地媒体库移除“\(title)”。")
+            } else {
+                Text("删除后将从本地媒体库移除该条目。")
+            }
+        }
     }
 
     private func play(item: MediaItem, playlist: [String]) {
@@ -142,6 +170,15 @@ private struct TagPlaylistDetailView: View {
             playback.isMiniVisible = true
             playback.presentExpanded = false
         }
+    }
+
+    private func delete(item: MediaItem) async {
+        do {
+            try await APIClient.shared.deleteMedia(id: item.id)
+            await MainActor.run {
+                items.removeAll { $0.id == item.id }
+            }
+        } catch {}
     }
 }
 

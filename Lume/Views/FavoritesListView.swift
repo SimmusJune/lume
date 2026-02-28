@@ -6,6 +6,8 @@ struct FavoritesListView: View {
     @StateObject private var viewModel: FavoriteListViewModel
     @State private var draggedItem: FavoriteListItem?
     @State private var favoriteTarget: MediaItem?
+    @State private var pendingDelete: FavoriteListItem?
+    @State private var showDeleteAlert = false
 
     init(group: FavoriteGroup) {
         _viewModel = StateObject(wrappedValue: FavoriteListViewModel(group: group))
@@ -43,35 +45,40 @@ struct FavoritesListView: View {
                         let playlist = viewModel.items.map(\.mediaID)
                         LazyVStack(spacing: 12) {
                             ForEach(viewModel.items) { item in
-                                if viewModel.supportsEditing {
-                                    MediaCard(item: mediaItem(from: item), onFavorite: {
-                                        Task { await viewModel.remove(mediaID: item.mediaID) }
-                                    })
-                                    .contentShape(Rectangle())
-                                    .onTapGesture {
-                                        play(item: item, playlist: playlist)
-                                    }
-                                    .opacity(draggedItem?.id == item.id ? 0.65 : 1)
-                                    .onDrag {
-                                        draggedItem = item
-                                        return NSItemProvider(object: item.mediaID as NSString)
-                                    }
-                                    .onDrop(
-                                        of: [UTType.text],
-                                        delegate: FavoriteItemDropDelegate(
-                                            item: item,
-                                            items: $viewModel.items,
-                                            draggedItem: $draggedItem,
-                                            onCommit: persistOrder
+                                SwipeToDeleteRow(onDeleteTapped: {
+                                    pendingDelete = item
+                                    showDeleteAlert = true
+                                }) {
+                                    if viewModel.supportsEditing {
+                                        MediaCard(item: mediaItem(from: item), onFavorite: {
+                                            Task { await viewModel.remove(mediaID: item.mediaID) }
+                                        })
+                                        .contentShape(Rectangle())
+                                        .onTapGesture {
+                                            play(item: item, playlist: playlist)
+                                        }
+                                        .opacity(draggedItem?.id == item.id ? 0.65 : 1)
+                                        .onDrag {
+                                            draggedItem = item
+                                            return NSItemProvider(object: item.mediaID as NSString)
+                                        }
+                                        .onDrop(
+                                            of: [UTType.text],
+                                            delegate: FavoriteItemDropDelegate(
+                                                item: item,
+                                                items: $viewModel.items,
+                                                draggedItem: $draggedItem,
+                                                onCommit: persistOrder
+                                            )
                                         )
-                                    )
-                                } else {
-                                    MediaCard(item: mediaItem(from: item), onFavorite: {
-                                        favoriteTarget = mediaItem(from: item)
-                                    })
-                                    .contentShape(Rectangle())
-                                    .onTapGesture {
-                                        play(item: item, playlist: playlist)
+                                    } else {
+                                        MediaCard(item: mediaItem(from: item), onFavorite: {
+                                            favoriteTarget = mediaItem(from: item)
+                                        })
+                                        .contentShape(Rectangle())
+                                        .onTapGesture {
+                                            play(item: item, playlist: playlist)
+                                        }
                                     }
                                 }
                             }
@@ -102,6 +109,24 @@ struct FavoritesListView: View {
         }) { item in
             FavoritesPickerSheet(mediaID: item.id, mediaType: item.type)
         }
+        .alert("删除该条目？", isPresented: $showDeleteAlert) {
+            Button("删除", role: .destructive) {
+                guard let item = pendingDelete else { return }
+                Task { await delete(item: item) }
+                pendingDelete = nil
+            }
+            Button("取消", role: .cancel) {
+                pendingDelete = nil
+            }
+        } message: {
+            if viewModel.supportsEditing {
+                Text("删除后将从当前收藏分组移除该条目。")
+            } else if let title = pendingDelete?.title, !title.isEmpty {
+                Text("删除后将从本地媒体库移除“\(title)”。")
+            } else {
+                Text("删除后将从本地媒体库移除该条目。")
+            }
+        }
     }
 
     private func play(item: FavoriteListItem, playlist: [String]) {
@@ -128,6 +153,22 @@ struct FavoritesListView: View {
             status: "",
             tags: item.tags
         )
+    }
+
+    private func delete(item: FavoriteListItem) async {
+        if viewModel.supportsEditing {
+            await viewModel.remove(mediaID: item.mediaID)
+            return
+        }
+
+        do {
+            try await APIClient.shared.deleteMedia(id: item.mediaID)
+            await viewModel.load()
+        } catch {
+            await MainActor.run {
+                viewModel.errorMessage = "Failed to delete media."
+            }
+        }
     }
 }
 
