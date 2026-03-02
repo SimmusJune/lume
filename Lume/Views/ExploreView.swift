@@ -68,17 +68,15 @@ struct ExploreView: View {
                             } else {
                                 LazyVStack(spacing: rowSpacing) {
                                     ForEach(viewModel.items) { item in
-                                        SwipeToDeleteRow(onDeleteTapped: {
+                                        MediaCard(item: item, onFavorite: {
+                                            favoriteTarget = item
+                                        }, onDelete: {
                                             pendingDelete = item
                                             showDeleteAlert = true
-                                        }) {
-                                            MediaCard(item: item, onFavorite: {
-                                                favoriteTarget = item
-                                            })
-                                            .contentShape(Rectangle())
-                                            .onTapGesture {
-                                                play(item: item)
-                                            }
+                                        })
+                                        .contentShape(Rectangle())
+                                        .onTapGesture {
+                                            play(item: item)
                                         }
                                     }
                                 }
@@ -567,17 +565,15 @@ private struct ExploreTagPlaylistDetailView: View {
 
                     LazyVStack(spacing: 12) {
                         ForEach(items) { item in
-                            SwipeToDeleteRow(onDeleteTapped: {
+                            MediaCard(item: item, onFavorite: {
+                                favoriteTarget = item
+                            }, onDelete: {
                                 pendingDelete = item
                                 showDeleteAlert = true
-                            }) {
-                                MediaCard(item: item, onFavorite: {
-                                    favoriteTarget = item
-                                })
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    play(item: item, playlist: items.map(\.id))
-                                }
+                            })
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                play(item: item, playlist: items.map(\.id))
                             }
                         }
                     }

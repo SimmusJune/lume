@@ -45,40 +45,41 @@ struct FavoritesListView: View {
                         let playlist = viewModel.items.map(\.mediaID)
                         LazyVStack(spacing: 12) {
                             ForEach(viewModel.items) { item in
-                                SwipeToDeleteRow(onDeleteTapped: {
-                                    pendingDelete = item
-                                    showDeleteAlert = true
-                                }) {
-                                    if viewModel.supportsEditing {
-                                        MediaCard(item: mediaItem(from: item), onFavorite: {
-                                            Task { await viewModel.remove(mediaID: item.mediaID) }
-                                        })
-                                        .contentShape(Rectangle())
-                                        .onTapGesture {
-                                            play(item: item, playlist: playlist)
-                                        }
-                                        .opacity(draggedItem?.id == item.id ? 0.65 : 1)
-                                        .onDrag {
-                                            draggedItem = item
-                                            return NSItemProvider(object: item.mediaID as NSString)
-                                        }
-                                        .onDrop(
-                                            of: [UTType.text],
-                                            delegate: FavoriteItemDropDelegate(
-                                                item: item,
-                                                items: $viewModel.items,
-                                                draggedItem: $draggedItem,
-                                                onCommit: persistOrder
-                                            )
+                                if viewModel.supportsEditing {
+                                    MediaCard(item: mediaItem(from: item), onFavorite: {
+                                        Task { await viewModel.remove(mediaID: item.mediaID) }
+                                    }, onDelete: {
+                                        pendingDelete = item
+                                        showDeleteAlert = true
+                                    })
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        play(item: item, playlist: playlist)
+                                    }
+                                    .opacity(draggedItem?.id == item.id ? 0.65 : 1)
+                                    .onDrag {
+                                        draggedItem = item
+                                        return NSItemProvider(object: item.mediaID as NSString)
+                                    }
+                                    .onDrop(
+                                        of: [UTType.text],
+                                        delegate: FavoriteItemDropDelegate(
+                                            item: item,
+                                            items: $viewModel.items,
+                                            draggedItem: $draggedItem,
+                                            onCommit: persistOrder
                                         )
-                                    } else {
-                                        MediaCard(item: mediaItem(from: item), onFavorite: {
-                                            favoriteTarget = mediaItem(from: item)
-                                        })
-                                        .contentShape(Rectangle())
-                                        .onTapGesture {
-                                            play(item: item, playlist: playlist)
-                                        }
+                                    )
+                                } else {
+                                    MediaCard(item: mediaItem(from: item), onFavorite: {
+                                        favoriteTarget = mediaItem(from: item)
+                                    }, onDelete: {
+                                        pendingDelete = item
+                                        showDeleteAlert = true
+                                    })
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        play(item: item, playlist: playlist)
                                     }
                                 }
                             }
