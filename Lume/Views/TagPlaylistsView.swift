@@ -52,6 +52,9 @@ struct TagPlaylistsView: View {
         .task {
             await viewModel.load()
         }
+        .onReceive(NotificationCenter.default.publisher(for: APIClient.didDeleteMedia)) { _ in
+            Task { await viewModel.load() }
+        }
     }
 }
 
@@ -158,6 +161,10 @@ private struct TagPlaylistDetailView: View {
             } else {
                 Text("删除后将从本地媒体库移除该条目。")
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: APIClient.didDeleteMedia)) { notification in
+            guard let deletedID = notification.object as? String else { return }
+            items.removeAll { $0.id == deletedID }
         }
     }
 

@@ -17,8 +17,11 @@ struct PlayerView: View {
     @EnvironmentObject private var viewModel: PlayerViewModel
     @State private var showFavoritesPicker = false
     @State private var showQueue = false
+    @State private var showDeleteAlert = false
     @State private var shareItem: ShareItem?
-    @State private var exportError: String?
+    @State private var errorAlertTitle = ""
+    @State private var errorAlertMessage: String?
+    @State private var isDeleting = false
     @State private var isExporting = false
     @State private var dragOffset: CGFloat = 0
 
@@ -100,12 +103,24 @@ struct PlayerView: View {
         .sheet(item: $shareItem) { item in
             ShareSheet(items: [item.url])
         }
-        .alert("Export failed", isPresented: Binding(get: { exportError != nil }, set: { isPresented in
-            if !isPresented { exportError = nil }
+        .confirmationDialog("删除该条目？", isPresented: $showDeleteAlert, titleVisibility: .visible) {
+            Button("删除", role: .destructive) {
+                deleteCurrent()
+            }
+            Button("取消", role: .cancel) { }
+        } message: {
+            if let title = viewModel.detail?.title, !title.isEmpty {
+                Text("删除后将从本地媒体库移除“\(title)”，并自动播放下一条。")
+            } else {
+                Text("删除后将从本地媒体库移除当前条目，并自动播放下一条。")
+            }
+        }
+        .alert(errorAlertTitle, isPresented: Binding(get: { errorAlertMessage != nil }, set: { isPresented in
+            if !isPresented { errorAlertMessage = nil }
         })) {
             Button("OK", role: .cancel) { }
         } message: {
-            Text(exportError ?? "")
+            Text(errorAlertMessage ?? "")
         }
     }
 
@@ -150,6 +165,27 @@ struct PlayerView: View {
             }
 
             Button {
+                showDeleteAlert = true
+            } label: {
+                ZStack {
+                    Image(systemName: "trash")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color(hex: "2a2d31"))
+                        .opacity(isDeleting ? 0 : 1)
+
+                    if isDeleting {
+                        ProgressView()
+                            .tint(Color(hex: "2a2d31"))
+                    }
+                }
+                .frame(width: 36, height: 36)
+                .background(Color.white.opacity(0.7))
+                .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .disabled(isDeleting || viewModel.detail == nil)
+
+            Button {
                 guard !isExporting else { return }
                 isExporting = true
                 Task {
@@ -160,7 +196,8 @@ struct PlayerView: View {
                         }
                     } catch {
                         await MainActor.run {
-                            exportError = "Failed to export JSON."
+                            errorAlertTitle = "Export failed"
+                            errorAlertMessage = "Failed to export JSON."
                         }
                     }
                     await MainActor.run {
@@ -333,6 +370,28 @@ struct PlayerView: View {
         let minutes = total / 60
         let secs = total % 60
         return String(format: "%d:%02d", minutes, secs)
+    }
+
+    private func deleteCurrent() {
+        guard !isDeleting else { return }
+        isDeleting = true
+        Task {
+            do {
+                let result = try await viewModel.deleteCurrentMedia()
+                await MainActor.run {
+                    isDeleting = false
+                    if result == .queueEnded {
+                        dismiss()
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    isDeleting = false
+                    errorAlertTitle = "删除失败"
+                    errorAlertMessage = "Failed to delete media."
+                }
+            }
+        }
     }
 }
 

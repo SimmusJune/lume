@@ -128,6 +128,9 @@ struct FavoritesListView: View {
                 Text("删除后将从本地媒体库移除该条目。")
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: APIClient.didDeleteMedia)) { _ in
+            Task { await viewModel.load() }
+        }
     }
 
     private func play(item: FavoriteListItem, playlist: [String]) {

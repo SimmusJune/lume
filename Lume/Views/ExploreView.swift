@@ -155,6 +155,17 @@ struct ExploreView: View {
                 Task { await playlistsViewModel.load() }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: APIClient.didDeleteMedia)) { _ in
+            Task {
+                if showFavoritesList {
+                    await favoritesViewModel.load()
+                } else if showPlaylistsList {
+                    await playlistsViewModel.load()
+                } else {
+                    await viewModel.load()
+                }
+            }
+        }
     }
 
     private func play(item: MediaItem) {
@@ -601,6 +612,10 @@ private struct ExploreTagPlaylistDetailView: View {
             } else {
                 Text("删除后将从本地媒体库移除该条目。")
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: APIClient.didDeleteMedia)) { notification in
+            guard let deletedID = notification.object as? String else { return }
+            items.removeAll { $0.id == deletedID }
         }
     }
 

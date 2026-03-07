@@ -6,6 +6,11 @@ import SwiftUI
 
 @MainActor
 final class PlayerViewModel: ObservableObject {
+    enum DeleteCurrentResult {
+        case advancedToNext
+        case queueEnded
+    }
+
     enum PlayMode: String, CaseIterable {
         case sequential
         case singleLoop
@@ -216,6 +221,28 @@ final class PlayerViewModel: ObservableObject {
         guard prevIndex >= 0 else { return }
         currentIndex = prevIndex
         Task { await load(id: playlist[prevIndex], autoPlay: true) }
+    }
+
+    func deleteCurrentMedia() async throws -> DeleteCurrentResult {
+        guard let detail else { throw APIError.httpStatus(404) }
+
+        let deletedID = detail.id
+        let nextID = nextTrackIDAfterDeletingCurrent(id: deletedID)
+
+        try await api.deleteMedia(id: deletedID)
+        removeFromQueue(id: deletedID, nextID: nextID)
+
+        if let nextID {
+            await load(id: nextID, autoPlay: true)
+            guard currentMediaID == nextID else {
+                clearPlaybackState()
+                return .queueEnded
+            }
+            return .advancedToNext
+        }
+
+        clearPlaybackState()
+        return .queueEnded
     }
 
     func play() {
@@ -494,5 +521,57 @@ final class PlayerViewModel: ObservableObject {
         let trimmed = lastPlayedQueue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let data = trimmed.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode([String].self, from: data)
+    }
+
+    private func nextTrackIDAfterDeletingCurrent(id: String) -> String? {
+        guard !playlist.isEmpty else { return nil }
+
+        if let index = currentIndex, playlist.indices.contains(index), playlist[index] == id {
+            guard playlist.count > 1 else { return nil }
+            let nextIndex = index + 1 < playlist.count ? index + 1 : 0
+            return playlist[nextIndex]
+        }
+
+        return playlist.first(where: { $0 != id })
+    }
+
+    private func removeFromQueue(id: String, nextID: String?) {
+        let updatedPlaylist = playlist.filter { $0 != id }
+        playlist = updatedPlaylist
+        persistQueue(updatedPlaylist)
+        loadQueueDetails(updatedPlaylist)
+
+        if let nextID {
+            currentIndex = updatedPlaylist.firstIndex(of: nextID)
+        } else {
+            currentIndex = nil
+        }
+    }
+
+    private func clearPlaybackState() {
+        teardown()
+        queueLoadTask?.cancel()
+        pause()
+        player.replaceCurrentItem(with: nil)
+        detail = nil
+        currentMediaID = nil
+        positionSeconds = 0
+        durationSeconds = 0
+        errorMessage = nil
+        queueDetails = []
+        playlist = []
+        currentIndex = nil
+        playOrigin = .unknown
+        isMiniVisible = false
+        presentExpanded = false
+        isAdvancingTrack = false
+        lastProgressSentAt = 0
+        lastStatsPosition = 0
+        pendingStatsSeconds = 0
+        lastPlayedMediaID = ""
+        lastPlayedQueue = ""
+        lastPlayedOriginType = ""
+        lastPlayedOriginName = ""
+        NowPlayingManager.clear()
     }
 }

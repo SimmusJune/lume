@@ -75,6 +75,9 @@ struct FavoritesGroupsView: View {
                 Task { await viewModel.createGroup(name: name, mediaType: type) }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: APIClient.didDeleteMedia)) { _ in
+            Task { await viewModel.load() }
+        }
     }
 }
 
