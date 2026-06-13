@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lume Support</title>
+  <style>
+    :root {
+      --bg: #0b0d10;
+      --card: #151922;
+      --text: #f3f6fb;
+      --muted: #b5bfd1;
+      --line: #2a3241;
+      --brand: #9dff85;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: var(--text);
+      background: radial-gradient(1200px 800px at 85% -10%, #1d2432 0%, var(--bg) 55%);
+    }
+    .wrap {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 48px 20px 72px;
+    }
+    .card {
+      background: rgba(21, 25, 34, 0.82);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 24px;
+      backdrop-filter: blur(6px);
+    }
+    h1 { margin: 0; font-size: 34px; line-height: 1.1; }
+    h2 { margin: 24px 0 10px; font-size: 18px; color: var(--brand); }
+    p, li { color: var(--muted); line-height: 1.7; }
+    ul { margin: 0; padding-left: 18px; }
+    a { color: var(--text); }
+    .kv { margin-top: 8px; }
+    .kv b { color: var(--text); }
+    .back {
+      display: inline-block;
+      margin-bottom: 14px;
+      text-decoration: none;
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 8px 10px;
+    }
+    .note {
+      margin-top: 16px;
+      border-left: 3px solid var(--brand);
+      padding: 10px 12px;
+      background: #111622;
+      border-radius: 8px;
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="card">
+      <a class="back" href="../">Back</a>
+      <h1>Lume Support</h1>
+      <p class="kv"><b>App:</b> Lume (iOS)</p>
+      <p class="kv"><b>Developer:</b> Your Name</p>
+      <p class="kv"><b>Contact Email:</b> your-email@example.com</p>
+
+      <h2>How Can We Help?</h2>
+      <ul>
+        <li>Importing or exporting your library JSON file</li>
+        <li>Playback issues (queue, shuffle, repeat, background audio)</li>
+        <li>Favorites and playlist organization</li>
+        <li>Account sign-in issues</li>
+      </ul>
+
+      <h2>Frequently Asked Questions</h2>
+      <p><b>Q: Does Lume require an internet account?</b><br />A: No. You can use local account login. Sign in with Apple is also supported.</p>
+      <p><b>Q: What file format can I import?</b><br />A: Lume currently supports JSON library import/export.</p>
+      <p><b>Q: Can audio continue in background?</b><br />A: Yes, background audio playback is supported.</p>
+
+      <h2>Support Response Time</h2>
+      <p>We usually reply within 3 business days.</p>
+
+      <div class="note">
+        Replace the developer name and email above before publishing this page.
+      </div>
+    </section>
+  </main>
+</body>
+</html>
