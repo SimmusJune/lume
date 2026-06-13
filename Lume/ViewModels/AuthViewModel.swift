@@ -3,6 +3,11 @@ import Combine
 import Foundation
 import SwiftUI
 
+private enum AuthProvider: String {
+    case apple
+    case local
+}
+
 struct AuthUser: Equatable {
     let id: String
     let displayName: String
@@ -11,9 +16,14 @@ struct AuthUser: Equatable {
 
 @MainActor
 final class AuthViewModel: ObservableObject {
+    private static let localUsername = "Lume"
+    private static let localPassword = "Lume1228"
+
+    @AppStorage("authProvider") private var storedAuthProvider = ""
     @AppStorage("appleUserID") private var storedUserID = ""
     @AppStorage("appleUserName") private var storedUserName = ""
     @AppStorage("appleUserEmail") private var storedUserEmail = ""
+    @AppStorage("localUserName") private var storedLocalUserName = ""
 
     @Published private(set) var user: AuthUser?
     @Published private(set) var identityToken: String?
@@ -24,7 +34,9 @@ final class AuthViewModel: ObservableObject {
     }
 
     init() {
-        if !storedUserID.isEmpty {
+        if storedAuthProvider == AuthProvider.local.rawValue, !storedLocalUserName.isEmpty {
+            user = AuthUser(id: "local:\(storedLocalUserName)", displayName: storedLocalUserName, email: nil)
+        } else if !storedUserID.isEmpty {
             user = AuthUser(id: storedUserID, displayName: storedUserName, email: storedUserEmail.isEmpty ? nil : storedUserEmail)
         }
     }
@@ -40,9 +52,11 @@ final class AuthViewModel: ObservableObject {
             let displayName = formatName(credential.fullName) ?? storedUserName
             let email = credential.email ?? (storedUserEmail.isEmpty ? nil : storedUserEmail)
 
+            storedAuthProvider = AuthProvider.apple.rawValue
             storedUserID = credential.user
             storedUserName = displayName
             storedUserEmail = email ?? ""
+            storedLocalUserName = ""
 
             if let tokenData = credential.identityToken {
                 identityToken = String(data: tokenData, encoding: .utf8)
@@ -55,15 +69,31 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
-    func demoSignIn() {
-        user = AuthUser(id: "demo", displayName: "Demo User", email: nil)
+    func signIn(username: String, password: String) {
+        let trimmedUsername = username.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedPassword = password.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard trimmedUsername == Self.localUsername, trimmedPassword == Self.localPassword else {
+            errorMessage = "Incorrect username or password."
+            return
+        }
+
+        storedAuthProvider = AuthProvider.local.rawValue
+        storedLocalUserName = trimmedUsername
+        storedUserID = ""
+        storedUserName = ""
+        storedUserEmail = ""
+        identityToken = nil
+        user = AuthUser(id: "local:\(trimmedUsername)", displayName: trimmedUsername, email: nil)
         errorMessage = nil
     }
 
     func signOut() {
+        storedAuthProvider = ""
         storedUserID = ""
         storedUserName = ""
         storedUserEmail = ""
+        storedLocalUserName = ""
         identityToken = nil
         user = nil
     }

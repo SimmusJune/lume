@@ -103,16 +103,16 @@ struct PlayerView: View {
         .sheet(item: $shareItem) { item in
             ShareSheet(items: [item.url])
         }
-        .confirmationDialog("删除该条目？", isPresented: $showDeleteAlert, titleVisibility: .visible) {
-            Button("删除", role: .destructive) {
+        .confirmationDialog("Delete this item?", isPresented: $showDeleteAlert, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
                 deleteCurrent()
             }
-            Button("取消", role: .cancel) { }
+            Button("Cancel", role: .cancel) { }
         } message: {
             if let title = viewModel.detail?.title, !title.isEmpty {
-                Text("删除后将从本地媒体库移除“\(title)”，并自动播放下一条。")
+                Text("This removes “\(title)” from the local media library and automatically plays the next item.")
             } else {
-                Text("删除后将从本地媒体库移除当前条目，并自动播放下一条。")
+                Text("This removes the current item from the local media library and automatically plays the next item.")
             }
         }
         .alert(errorAlertTitle, isPresented: Binding(get: { errorAlertMessage != nil }, set: { isPresented in
@@ -387,7 +387,7 @@ struct PlayerView: View {
             } catch {
                 await MainActor.run {
                     isDeleting = false
-                    errorAlertTitle = "删除失败"
+                    errorAlertTitle = "Delete Failed"
                     errorAlertMessage = "Failed to delete media."
                 }
             }
@@ -450,7 +450,7 @@ private struct QueueSheet: View {
                 .padding(.top, 8)
 
             HStack {
-                Text("播放列表")
+                Text("Queue")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Color(hex: "2a2d31"))
 
@@ -472,13 +472,13 @@ private struct QueueSheet: View {
 
             if viewModel.playlist.isEmpty {
                 Spacer()
-                Text("暂无播放列表")
+                Text("Queue is empty")
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(Color(hex: "6b7077"))
                 Spacer()
             } else if viewModel.queueDetails.isEmpty {
                 Spacer()
-                ProgressView("加载中...")
+                ProgressView("Loading...")
                     .font(.system(size: 14, weight: .medium))
                     .tint(Color(hex: "2a2d31"))
                 Spacer()
@@ -538,7 +538,7 @@ private struct QueueRow: View {
                 Spacer()
 
                 if isCurrent {
-                    Text("正在播放")
+                    Text("Now Playing")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Color(hex: "2a2d31"))
                         .padding(.horizontal, 8)

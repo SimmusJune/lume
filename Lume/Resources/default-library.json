@@ -1,0 +1,71 @@
+{
+  "favorite_groups": [],
+  "items": [
+    {
+      "duration_ms": 326000,
+      "format": "mp3",
+      "status": "ready",
+      "subtitle": "10 Apples On My Head",
+      "tags": [
+        "SSS"
+      ],
+      "thumb_url": "https://haohao-1312736007.cos.ap-guangzhou.myqcloud.com/SSS/cover/10%20Apples%20On%20My%20Head.jpg",
+      "title": "10 Apples On My Head",
+      "type": "audio",
+      "url": "https://haohao-1312736007.cos.ap-guangzhou.myqcloud.com/SSS/10%20Apples%20On%20My%20Head.mp3"
+    },
+    {
+      "duration_ms": 153000,
+      "format": "mp3",
+      "status": "ready",
+      "subtitle": "8 Little Planets",
+      "tags": [
+        "SSS"
+      ],
+      "thumb_url": "https://haohao-1312736007.cos.ap-guangzhou.myqcloud.com/SSS/cover/8%20Little%20Planets.jpg",
+      "title": "8 Little Planets",
+      "type": "audio",
+      "url": "https://haohao-1312736007.cos.ap-guangzhou.myqcloud.com/SSS/8%20Little%20Planets.mp3"
+    },
+    {
+      "duration_ms": 227000,
+      "format": "mp3",
+      "status": "ready",
+      "subtitle": "Adding Up To 10",
+      "tags": [
+        "SSS"
+      ],
+      "thumb_url": "https://haohao-1312736007.cos.ap-guangzhou.myqcloud.com/SSS/cover/Adding%20Up%20To%2010.jpg",
+      "title": "Adding Up To 10",
+      "type": "audio",
+      "url": "https://haohao-1312736007.cos.ap-guangzhou.myqcloud.com/SSS/Adding%20Up%20To%2010.mp3"
+    },
+    {
+      "duration_ms": 118000,
+      "format": "mp3",
+      "status": "ready",
+      "subtitle": "Can You Make A Happy Face_",
+      "tags": [
+        "SSS"
+      ],
+      "thumb_url": "https://haohao-1312736007.cos.ap-guangzhou.myqcloud.com/SSS/cover/Can%20You%20Make%20A%20Happy%20Face_.jpg",
+      "title": "Can You Make A Happy Face_",
+      "type": "audio",
+      "url": "https://haohao-1312736007.cos.ap-guangzhou.myqcloud.com/SSS/Can%20You%20Make%20A%20Happy%20Face_.mp3"
+    },
+    {
+      "duration_ms": 171000,
+      "format": "mp3",
+      "status": "ready",
+      "subtitle": "And The Green Grass Grew _ featuring Caitie",
+      "tags": [
+        "SSS"
+      ],
+      "thumb_url": "https://haohao-1312736007.cos.ap-guangzhou.myqcloud.com/SSS/cover/And%20The%20Green%20Grass%20Grew%20_%20featuring%20Caitie.jpg",
+      "title": "And The Green Grass Grew _ featuring Caitie",
+      "type": "audio",
+      "url": "https://haohao-1312736007.cos.ap-guangzhou.myqcloud.com/SSS/And%20The%20Green%20Grass%20Grew%20_%20featuring%20Caitie.mp3"
+    }
+  ],
+  "version": 1
+}

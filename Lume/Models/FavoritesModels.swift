@@ -74,7 +74,7 @@ struct AddFavoriteItemPayload: Codable {
 
 extension FavoriteGroup {
     static let unfavoritedAudioGroupID = "g_unfavorited_audio"
-    static let unfavoritedAudioGroupName = "未被收藏（音频）"
+    static let unfavoritedAudioGroupName = "Unfavorited (Audio)"
 
     var isUnfavoritedAudioGroup: Bool {
         id == Self.unfavoritedAudioGroupID

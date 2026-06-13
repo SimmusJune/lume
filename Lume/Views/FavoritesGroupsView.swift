@@ -133,13 +133,6 @@ private struct CreateFavoriteGroupSheet: View {
                     TextField("Group Name", text: $name)
                 }
 
-                Section("Type") {
-                    Picker("Type", selection: $mediaType) {
-                        Text("Audio").tag(MediaType.audio)
-                        Text("Video").tag(MediaType.video)
-                    }
-                    .pickerStyle(.segmented)
-                }
             }
             .navigationTitle("New Group")
             .toolbar {

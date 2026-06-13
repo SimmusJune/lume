@@ -1,9 +1,9 @@
 import SwiftUI
 
 enum PlaybackStatsRange: String, CaseIterable {
-    case day = "日"
-    case month = "月"
-    case year = "年"
+    case day = "Day"
+    case month = "Month"
+    case year = "Year"
 }
 
 struct PlaybackCalendarView: View {
@@ -58,7 +58,7 @@ struct PlaybackCalendarView: View {
     }
 
     private var weekHeader: some View {
-        let weekdays = ["日", "一", "二", "三", "四", "五", "六"]
+        let weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
         return HStack(spacing: 0) {
             ForEach(weekdays, id: \.self) { day in
                 Text(day)
@@ -102,7 +102,7 @@ struct PlaybackCalendarView: View {
 
     private func monthTitle(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy年 M月"
+        formatter.dateFormat = "yyyy MMM"
         return formatter.string(from: date)
     }
 }
@@ -146,7 +146,7 @@ private struct CalendarDayCell: View {
         .frame(maxWidth: .infinity, minHeight: 48)
         .overlay(alignment: .topTrailing) {
             if isToday {
-                Text("今")
+                Text("Today")
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(Color(hex: "0b0d10"))
                     .padding(.horizontal, 4)
@@ -289,15 +289,15 @@ struct PlaybackMonthGridView: View {
 
     private func yearTitle(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy年"
+        formatter.dateFormat = "yyyy"
         return formatter.string(from: date)
     }
 
     private func monthTitle(_ month: Int) -> String {
         if isCurrentMonth(month) {
-            return "本月"
+            return "This Month"
         }
-        return "\(month)月"
+        return DateFormatter().shortMonthSymbols[max(0, min(month - 1, 11))]
     }
 
     private func isCurrentMonth(_ month: Int) -> Bool {
@@ -351,7 +351,7 @@ struct PlaybackYearGridView: View {
             }
             .buttonStyle(.plain)
 
-            Text("\(startYear)-\(endYear)年")
+            Text("\(startYear)-\(endYear)")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
@@ -374,9 +374,9 @@ struct PlaybackYearGridView: View {
 
     private func yearTitle(_ year: Int, currentYear: Int) -> String {
         if year == currentYear {
-            return "本年"
+            return "This Year"
         }
-        return "\(year)年"
+        return "\(year)"
     }
 }
 

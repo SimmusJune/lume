@@ -26,9 +26,9 @@ final class PlayerViewModel: ObservableObject {
 
         var label: String {
             switch self {
-            case .sequential: return "顺序播放"
-            case .singleLoop: return "单曲循环"
-            case .shuffle: return "随机播放"
+            case .sequential: return "Repeat All"
+            case .singleLoop: return "Repeat One"
+            case .shuffle: return "Shuffle"
             }
         }
     }
@@ -42,13 +42,13 @@ final class PlayerViewModel: ObservableObject {
         var label: String {
             switch self {
             case .favorites(let name):
-                return format(prefix: "来自收藏", name: name)
+                return format(prefix: "From Favorites", name: name)
             case .playlist(let name):
-                return format(prefix: "来自歌单", name: name)
+                return format(prefix: "From Playlist", name: name)
             case .library:
-                return "来自本地库"
+                return "From Library"
             case .unknown:
-                return "播放中"
+                return "Now Playing"
             }
         }
 
@@ -420,7 +420,7 @@ final class PlayerViewModel: ObservableObject {
         isAdvancingTrack = true
 
         if playMode == .singleLoop, auto {
-            loadAdvancingTrack(id: playlist[index])
+            restartCurrentTrack()
             return
         }
 
@@ -442,6 +442,24 @@ final class PlayerViewModel: ObservableObject {
             guard let self else { return }
             defer { isAdvancingTrack = false }
             await load(id: id, autoPlay: true)
+        }
+    }
+
+    private func restartCurrentTrack() {
+        let targetDuration = durationSeconds
+        let restartTime = CMTime(seconds: 0, preferredTimescale: 600)
+        player.seek(to: restartTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+            guard let self else { return }
+            positionSeconds = 0
+            lastStatsPosition = 0
+            pendingStatsSeconds = 0
+            play()
+            NowPlayingManager.updatePlayback(
+                elapsed: 0,
+                duration: targetDuration,
+                isPlaying: true
+            )
+            isAdvancingTrack = false
         }
     }
 

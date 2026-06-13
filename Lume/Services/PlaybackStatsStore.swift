@@ -7,6 +7,47 @@ struct DailyPlayback: Identifiable, Hashable {
     let seconds: Int
 }
 
+struct PlaybackStatsSnapshot: Codable, Hashable, Sendable {
+    let totalSeconds: Int
+    let dailySeconds: [String: Int]
+
+    nonisolated var normalized: PlaybackStatsSnapshot {
+        let cleanedDailySeconds = dailySeconds.reduce(into: [String: Int]()) { partialResult, entry in
+            partialResult[entry.key] = max(0, entry.value)
+        }
+        let summedDailySeconds = cleanedDailySeconds.values.reduce(0, +)
+        return PlaybackStatsSnapshot(
+            totalSeconds: max(max(0, totalSeconds), summedDailySeconds),
+            dailySeconds: cleanedDailySeconds
+        )
+    }
+}
+
+enum PlaybackStatsStorage {
+    nonisolated static let totalKey = "lume.playback.totalSeconds"
+    nonisolated static let dailyKey = "lume.playback.dailySeconds"
+
+    nonisolated static func loadSnapshot(from defaults: UserDefaults = .standard) -> PlaybackStatsSnapshot {
+        let totalSeconds = max(0, defaults.integer(forKey: totalKey))
+        let dailySeconds: [String: Int]
+        if let data = defaults.data(forKey: dailyKey),
+           let decoded = try? JSONDecoder().decode([String: Int].self, from: data) {
+            dailySeconds = decoded
+        } else {
+            dailySeconds = [:]
+        }
+        return PlaybackStatsSnapshot(totalSeconds: totalSeconds, dailySeconds: dailySeconds).normalized
+    }
+
+    nonisolated static func saveSnapshot(_ snapshot: PlaybackStatsSnapshot, to defaults: UserDefaults = .standard) {
+        let normalized = snapshot.normalized
+        defaults.set(normalized.totalSeconds, forKey: totalKey)
+        if let data = try? JSONEncoder().encode(normalized.dailySeconds) {
+            defaults.set(data, forKey: dailyKey)
+        }
+    }
+}
+
 @MainActor
 final class PlaybackStatsStore: ObservableObject {
     static let shared = PlaybackStatsStore()
@@ -15,8 +56,6 @@ final class PlaybackStatsStore: ObservableObject {
     @Published private(set) var dailySeconds: [String: Int]
 
     private let defaults: UserDefaults
-    private let totalKey = "lume.playback.totalSeconds"
-    private let dailyKey = "lume.playback.dailySeconds"
 
     private static let dayKeyFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -29,13 +68,9 @@ final class PlaybackStatsStore: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        self.totalSeconds = defaults.integer(forKey: totalKey)
-        if let data = defaults.data(forKey: dailyKey),
-           let decoded = try? JSONDecoder().decode([String: Int].self, from: data) {
-            self.dailySeconds = decoded
-        } else {
-            self.dailySeconds = [:]
-        }
+        let snapshot = PlaybackStatsStorage.loadSnapshot(from: defaults)
+        self.totalSeconds = snapshot.totalSeconds
+        self.dailySeconds = snapshot.dailySeconds
     }
 
     func recordPlayback(seconds: Int, at date: Date = Date()) {
@@ -92,10 +127,16 @@ final class PlaybackStatsStore: ObservableObject {
         dayKeyFormatter.date(from: key)
     }
 
+    func reloadFromStorage() {
+        let snapshot = PlaybackStatsStorage.loadSnapshot(from: defaults)
+        totalSeconds = snapshot.totalSeconds
+        dailySeconds = snapshot.dailySeconds
+    }
+
     private func persist() {
-        defaults.set(totalSeconds, forKey: totalKey)
-        if let data = try? JSONEncoder().encode(dailySeconds) {
-            defaults.set(data, forKey: dailyKey)
-        }
+        PlaybackStatsStorage.saveSnapshot(
+            PlaybackStatsSnapshot(totalSeconds: totalSeconds, dailySeconds: dailySeconds),
+            to: defaults
+        )
     }
 }

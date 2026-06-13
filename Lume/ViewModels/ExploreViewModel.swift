@@ -5,16 +5,18 @@ import Foundation
 final class ExploreViewModel: ObservableObject {
     enum Filter: String, CaseIterable, Identifiable {
         case all = "All"
-        case videos = "Videos"
         case music = "Music"
+
+        static var visibleCases: [Filter] {
+            [.all, .music]
+        }
 
         var id: String { rawValue }
 
         var mediaType: MediaType? {
             switch self {
-            case .videos: return .video
             case .music: return .audio
-            default: return nil
+            case .all: return nil
             }
         }
     }
@@ -41,7 +43,7 @@ final class ExploreViewModel: ObservableObject {
                 type: selectedFilter.mediaType,
                 keyword: keyword.isEmpty ? nil : keyword
             )
-            items = response.items
+            items = visibleItems(from: response.items)
         } catch {
             errorMessage = "Failed to load media."
         }
@@ -56,7 +58,7 @@ final class ExploreViewModel: ObservableObject {
     func fetchLibraryQueueIDs() async -> [String] {
         do {
             let response = try await api.fetchMediaList(type: selectedFilter.mediaType, keyword: nil)
-            return response.items.map(\.id)
+            return visibleItems(from: response.items).map(\.id)
         } catch {
             return []
         }
@@ -74,8 +76,10 @@ final class ExploreViewModel: ObservableObject {
         do {
             let report = try await api.importJSON(url: url)
             let response = try await api.fetchMediaList(type: selectedFilter.mediaType, keyword: nil)
-            items = response.items
-            importSummary = "Imported \(report.inserted) new, updated \(report.updated), skipped \(report.skipped)."
+            items = visibleItems(from: response.items)
+            importSummary = report.didImportPlaybackStats
+                ? "Imported \(report.inserted) new, updated \(report.updated), skipped \(report.skipped), and restored playback stats."
+                : "Imported \(report.inserted) new, updated \(report.updated), skipped \(report.skipped)."
         } catch {
             errorMessage = "Failed to import JSON."
         }
@@ -88,10 +92,14 @@ final class ExploreViewModel: ObservableObject {
         do {
             try await api.deleteMedia(id: item.id)
             let response = try await api.fetchMediaList(type: selectedFilter.mediaType, keyword: nil)
-            items = response.items
+            items = visibleItems(from: response.items)
         } catch {
             errorMessage = "Failed to delete media."
         }
         isLoading = false
+    }
+
+    private func visibleItems(from items: [MediaItem]) -> [MediaItem] {
+        items.filter { $0.type != .video }
     }
 }

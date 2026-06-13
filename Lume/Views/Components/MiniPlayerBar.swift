@@ -10,12 +10,12 @@ struct MiniPlayerBar: View {
             thumbnail
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(viewModel.detail?.title ?? "尚未播放")
+                Text(viewModel.detail?.title ?? "Nothing Playing")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Color(hex: "22252a"))
                     .lineLimit(1)
 
-                Text(hasDetail ? viewModel.playOrigin.label : "选择一首歌开始")
+                Text(hasDetail ? viewModel.playOrigin.label : "Pick a track to start")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Color(hex: "7c8188"))
             }

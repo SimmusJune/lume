@@ -4,6 +4,7 @@ struct ImportReport: Hashable {
     let inserted: Int
     let updated: Int
     let skipped: Int
+    let didImportPlaybackStats: Bool
 
     var total: Int { inserted + updated + skipped }
 }
@@ -32,7 +33,8 @@ actor LocalLibraryStore {
         decoder.dateDecodingStrategy = .iso8601
         self.decoder = decoder
 
-        if let loaded = Self.loadState(from: storageURL, decoder: decoder, fileManager: fileManager) {
+        let loadedState = Self.loadState(from: storageURL, decoder: decoder, fileManager: fileManager)
+        if let loaded = loadedState {
             self.state = loaded
         } else {
             self.state = LibraryState()
@@ -40,6 +42,9 @@ actor LocalLibraryStore {
 
         if state.favoriteGroups.isEmpty {
             seedDefaultGroups()
+        }
+        if loadedState == nil {
+            importBundledDefaultLibrary()
         }
 
         rebuildIndex()
@@ -164,7 +169,7 @@ actor LocalLibraryStore {
             try persist()
         }
 
-        return ImportReport(inserted: inserted, updated: updated, skipped: skipped)
+        return ImportReport(inserted: inserted, updated: updated, skipped: skipped, didImportPlaybackStats: false)
     }
 
     func importJSON(from url: URL) throws -> ImportReport {
@@ -231,11 +236,17 @@ actor LocalLibraryStore {
         }
 
         let didChangeFavorites = importFavorites(from: payload.favoriteGroups)
+        let didImportPlaybackStats = importPlaybackStats(from: payload.playbackStats)
         if didChangeMedia || didChangeFavorites {
             try persist()
         }
 
-        return ImportReport(inserted: inserted, updated: updated, skipped: skipped)
+        return ImportReport(
+            inserted: inserted,
+            updated: updated,
+            skipped: skipped,
+            didImportPlaybackStats: didImportPlaybackStats
+        )
     }
 
     func exportJSON() throws -> Data {
@@ -262,9 +273,10 @@ actor LocalLibraryStore {
             )
         }
         let payload = LibraryExportPayload(
-            version: 1,
+            version: 2,
             items: records,
-            favoriteGroups: favoriteGroups
+            favoriteGroups: favoriteGroups,
+            playbackStats: PlaybackStatsStorage.loadSnapshot()
         )
         return try encoder.encode(payload)
     }
@@ -506,7 +518,7 @@ actor LocalLibraryStore {
     private func decodeLibraryImportPayload(from data: Data) throws -> LibraryImportPayload {
         let decoder = JSONDecoder()
         if let records = try? decoder.decode([MediaImportRecord].self, from: data) {
-            return LibraryImportPayload(version: nil, items: records, favoriteGroups: nil)
+            return LibraryImportPayload(version: nil, items: records, favoriteGroups: nil, playbackStats: nil)
         }
         if let payload = try? decoder.decode(LibraryImportPayload.self, from: data) {
             return payload
@@ -585,6 +597,15 @@ actor LocalLibraryStore {
         return changed
     }
 
+    private func importPlaybackStats(from snapshot: PlaybackStatsSnapshot?) -> Bool {
+        guard let snapshot else { return false }
+        let normalized = snapshot.normalized
+        let current = PlaybackStatsStorage.loadSnapshot()
+        guard current != normalized else { return false }
+        PlaybackStatsStorage.saveSnapshot(normalized)
+        return true
+    }
+
     private func buildFavoriteItems(from mediaIDs: [String], mediaType: MediaType) -> [FavoriteListItem] {
         var seen: Set<String> = []
         var items: [FavoriteListItem] = []
@@ -606,6 +627,20 @@ actor LocalLibraryStore {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func importBundledDefaultLibrary() {
+        let bundledURL = Bundle.main.url(
+            forResource: AppConfig.defaultLibraryResourceName,
+            withExtension: AppConfig.defaultLibraryResourceExtension,
+            subdirectory: "Resources"
+        ) ?? Bundle.main.url(
+            forResource: AppConfig.defaultLibraryResourceName,
+            withExtension: AppConfig.defaultLibraryResourceExtension
+        )
+
+        guard let bundledURL else { return }
+        _ = try? importJSON(from: bundledURL)
     }
 }
 
@@ -685,11 +720,13 @@ private struct LibraryExportPayload: Encodable {
     let version: Int
     let items: [MediaExportRecord]
     let favoriteGroups: [FavoriteGroupExportRecord]
+    let playbackStats: PlaybackStatsSnapshot
 
     enum CodingKeys: String, CodingKey {
         case version
         case items
         case favoriteGroups = "favorite_groups"
+        case playbackStats = "playback_stats"
     }
 }
 
@@ -697,11 +734,13 @@ private struct LibraryImportPayload: Decodable {
     let version: Int?
     let items: [MediaImportRecord]
     let favoriteGroups: [FavoriteGroupImportRecord]?
+    let playbackStats: PlaybackStatsSnapshot?
 
     enum CodingKeys: String, CodingKey {
         case version
         case items
         case favoriteGroups = "favorite_groups"
+        case playbackStats = "playback_stats"
     }
 }
 

@@ -23,13 +23,14 @@ struct ProfileView: View {
                     totalStatsCard
                     statsRangeCard
                     signOutButton
+                    versionFooter
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 12)
                 .padding(.bottom, 40)
             }
         }
-        .navigationTitle("个人页")
+        .navigationTitle("Profile")
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -54,7 +55,7 @@ struct ProfileView: View {
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Color.white.opacity(0.6))
                 } else {
-                    Text("本地账户")
+                    Text("Local Account")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Color.white.opacity(0.6))
                 }
@@ -66,7 +67,7 @@ struct ProfileView: View {
 
     private var totalStatsCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("播放总时长")
+            Text("Total Play Time")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color.white.opacity(0.6))
 
@@ -84,7 +85,7 @@ struct ProfileView: View {
         let selectedYear = Calendar.current.component(.year, from: displayYear)
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("播放统计")
+                Text("Playback Stats")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Color.white.opacity(0.6))
 
@@ -117,7 +118,7 @@ struct ProfileView: View {
         Button {
             auth.signOut()
         } label: {
-            Text("退出登录")
+            Text("Sign Out")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(Color.white)
                 .frame(maxWidth: .infinity)
@@ -126,6 +127,14 @@ struct ProfileView: View {
                 .clipShape(Capsule())
         }
         .padding(.top, 8)
+    }
+
+    private var versionFooter: some View {
+        Text(appVersionText)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(Color.white.opacity(0.45))
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.top, 4)
     }
 
     private var cardBackground: some View {
@@ -138,17 +147,34 @@ struct ProfileView: View {
     }
 
     private func durationText(_ seconds: Int) -> String {
-        guard seconds > 0 else { return "0 分钟" }
+        guard seconds > 0 else { return "0 min" }
         let minutes = seconds / 60
         let hours = minutes / 60
         let remainingMinutes = minutes % 60
         if hours > 0 {
             if remainingMinutes > 0 {
-                return "\(hours) 小时 \(remainingMinutes) 分"
+                return "\(hours)h \(remainingMinutes)m"
             }
-            return "\(hours) 小时"
+            return "\(hours)h"
         }
-        return "\(minutes) 分"
+        return "\(minutes)m"
+    }
+
+    private var appVersionText: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String
+        let build = info?["CFBundleVersion"] as? String
+
+        switch (version, build) {
+        case let (version?, build?) where !version.isEmpty && !build.isEmpty:
+            return "Version \(version) (\(build))"
+        case let (version?, _):
+            return "Version \(version)"
+        case let (_, build?):
+            return "Build \(build)"
+        default:
+            return "Version unavailable"
+        }
     }
 }
 

@@ -37,7 +37,7 @@ struct FavoritesListView: View {
                             .foregroundStyle(.red)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     } else if viewModel.items.isEmpty {
-                        Text("暂无收藏")
+                        Text("No favorites yet")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Color(hex: "9aa3ab"))
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -110,22 +110,22 @@ struct FavoritesListView: View {
         }) { item in
             FavoritesPickerSheet(mediaID: item.id, mediaType: item.type)
         }
-        .alert("删除该条目？", isPresented: $showDeleteAlert) {
-            Button("删除", role: .destructive) {
+        .alert("Delete this item?", isPresented: $showDeleteAlert) {
+            Button("Delete", role: .destructive) {
                 guard let item = pendingDelete else { return }
                 Task { await delete(item: item) }
                 pendingDelete = nil
             }
-            Button("取消", role: .cancel) {
+            Button("Cancel", role: .cancel) {
                 pendingDelete = nil
             }
         } message: {
             if viewModel.supportsEditing {
-                Text("删除后将从当前收藏分组移除该条目。")
+                Text("This removes the item from the current favorites group.")
             } else if let title = pendingDelete?.title, !title.isEmpty {
-                Text("删除后将从本地媒体库移除“\(title)”。")
+                Text("This removes “\(title)” from the local media library.")
             } else {
-                Text("删除后将从本地媒体库移除该条目。")
+                Text("This removes the item from the local media library.")
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: APIClient.didDeleteMedia)) { _ in
@@ -258,7 +258,7 @@ private struct NavigationPopGestureDisabled: UIViewControllerRepresentable {
 
 #Preview {
     NavigationStack {
-        FavoritesListView(group: FavoriteGroup(id: "g_audio", name: "corazon 的每日 30 首", mediaType: .audio, count: 30))
+        FavoritesListView(group: FavoriteGroup(id: "g_audio", name: "Corazon Daily 30", mediaType: .audio, count: 30))
     }
     .environmentObject(PlayerViewModel())
 }

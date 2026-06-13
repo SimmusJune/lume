@@ -21,6 +21,7 @@ final class FavoriteGroupsViewModel: ObservableObject {
             async let unfavoritedItems = api.fetchUnfavoritedAudioItems()
 
             let favoriteGroups = try await loadedGroups
+                .filter { $0.mediaType == .audio }
             let unfavoritedAudioItems = try await unfavoritedItems
             let unfavoritedCount = unfavoritedAudioItems.count
 

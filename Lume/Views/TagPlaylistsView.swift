@@ -146,20 +146,20 @@ private struct TagPlaylistDetailView: View {
         .sheet(item: $favoriteTarget) { item in
             FavoritesPickerSheet(mediaID: item.id, mediaType: item.type)
         }
-        .alert("删除该条目？", isPresented: $showDeleteAlert) {
-            Button("删除", role: .destructive) {
+        .alert("Delete this item?", isPresented: $showDeleteAlert) {
+            Button("Delete", role: .destructive) {
                 guard let item = pendingDelete else { return }
                 Task { await delete(item: item) }
                 pendingDelete = nil
             }
-            Button("取消", role: .cancel) {
+            Button("Cancel", role: .cancel) {
                 pendingDelete = nil
             }
         } message: {
             if let title = pendingDelete?.title, !title.isEmpty {
-                Text("删除后将从本地媒体库移除“\(title)”。")
+                Text("This removes “\(title)” from the local media library.")
             } else {
-                Text("删除后将从本地媒体库移除该条目。")
+                Text("This removes the item from the local media library.")
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: APIClient.didDeleteMedia)) { notification in

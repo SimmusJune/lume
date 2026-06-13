@@ -34,7 +34,9 @@ final class APIClient {
     }
 
     func importJSON(url: URL) async throws -> ImportReport {
-        try await library.importJSON(from: url)
+        let report = try await library.importJSON(from: url)
+        await PlaybackStatsStore.shared.reloadFromStorage()
+        return report
     }
 
     func exportJSONFile() async throws -> URL {

@@ -111,21 +111,21 @@ struct ExploreView: View {
                     viewModel.errorMessage = "Failed to import JSON."
                 }
             }
-            .alert("删除该条目？", isPresented: $showDeleteAlert) {
-                Button("删除", role: .destructive) {
+            .alert("Delete this item?", isPresented: $showDeleteAlert) {
+                Button("Delete", role: .destructive) {
                     if let item = pendingDelete {
                         Task { await viewModel.deleteMedia(item) }
                     }
                     pendingDelete = nil
                 }
-                Button("取消", role: .cancel) {
+                Button("Cancel", role: .cancel) {
                     pendingDelete = nil
                 }
             } message: {
                 if let title = pendingDelete?.title, !title.isEmpty {
-                    Text("删除后将从本地媒体库移除“\(title)”。")
+                    Text("This removes “\(title)” from the local media library.")
                 } else {
-                    Text("删除后将从本地媒体库移除该条目。")
+                    Text("This removes the item from the local media library.")
                 }
             }
             .sheet(item: $favoriteTarget) { item in
@@ -255,7 +255,7 @@ struct ExploreView: View {
     private var filterChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
-                ForEach(ExploreViewModel.Filter.allCases) { filter in
+                ForEach(ExploreViewModel.Filter.visibleCases) { filter in
                     Button {
                         showFavoritesList = false
                         showPlaylistsList = false
@@ -274,7 +274,7 @@ struct ExploreView: View {
                         showPlaylistsList = false
                     }
                 } label: {
-                    ChipView(title: "收藏", isSelected: showFavoritesList)
+                    ChipView(title: "Favorites", isSelected: showFavoritesList)
                 }
                 .buttonStyle(.plain)
 
@@ -284,7 +284,7 @@ struct ExploreView: View {
                         showFavoritesList = false
                     }
                 } label: {
-                    ChipView(title: "歌单", isSelected: showPlaylistsList)
+                    ChipView(title: "Playlists", isSelected: showPlaylistsList)
                 }
                 .buttonStyle(.plain)
             }
@@ -294,7 +294,7 @@ struct ExploreView: View {
     private var favoritesSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("收藏")
+                Text("Favorites")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
 
@@ -322,7 +322,7 @@ struct ExploreView: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.red)
             } else if favoritesViewModel.groups.isEmpty {
-                Text("暂无收藏")
+                Text("No favorites yet")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Color(hex: "9aa3ab"))
             } else {
@@ -350,7 +350,7 @@ struct ExploreView: View {
 
     private var playlistsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("歌单")
+            Text("Playlists")
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(.white)
 
@@ -363,7 +363,7 @@ struct ExploreView: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.red)
             } else if playlistsViewModel.groups.isEmpty {
-                Text("暂无歌单")
+                Text("No playlists yet")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Color(hex: "9aa3ab"))
             } else {
@@ -597,20 +597,20 @@ private struct ExploreTagPlaylistDetailView: View {
         .sheet(item: $favoriteTarget) { item in
             FavoritesPickerSheet(mediaID: item.id, mediaType: item.type)
         }
-        .alert("删除该条目？", isPresented: $showDeleteAlert) {
-            Button("删除", role: .destructive) {
+        .alert("Delete this item?", isPresented: $showDeleteAlert) {
+            Button("Delete", role: .destructive) {
                 guard let item = pendingDelete else { return }
                 Task { await delete(item: item) }
                 pendingDelete = nil
             }
-            Button("取消", role: .cancel) {
+            Button("Cancel", role: .cancel) {
                 pendingDelete = nil
             }
         } message: {
             if let title = pendingDelete?.title, !title.isEmpty {
-                Text("删除后将从本地媒体库移除“\(title)”。")
+                Text("This removes “\(title)” from the local media library.")
             } else {
-                Text("删除后将从本地媒体库移除该条目。")
+                Text("This removes the item from the local media library.")
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: APIClient.didDeleteMedia)) { notification in
@@ -652,13 +652,6 @@ private struct CreateFavoriteGroupSheet: View {
                     TextField("Group Name", text: $name)
                 }
 
-                Section("Type") {
-                    Picker("Type", selection: $mediaType) {
-                        Text("Audio").tag(MediaType.audio)
-                        Text("Video").tag(MediaType.video)
-                    }
-                    .pickerStyle(.segmented)
-                }
             }
             .navigationTitle("New Group")
             .toolbar {
