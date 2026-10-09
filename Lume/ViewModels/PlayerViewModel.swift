@@ -70,7 +70,12 @@ final class PlayerViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var isMiniVisible = false
     @Published var presentExpanded = false
-    @Published var playMode: PlayMode = .sequential
+    @Published var playMode: PlayMode = .sequential {
+        didSet {
+            guard oldValue != playMode else { return }
+            storedPlayMode = playMode.rawValue
+        }
+    }
     @Published private(set) var playOrigin: PlayOrigin = .unknown
     @Published private(set) var queueDetails: [MediaDetail] = []
 
@@ -78,6 +83,7 @@ final class PlayerViewModel: ObservableObject {
     @AppStorage("lume.lastPlayedQueue") private var lastPlayedQueue = ""
     @AppStorage("lume.lastPlayedOriginType") private var lastPlayedOriginType = ""
     @AppStorage("lume.lastPlayedOriginName") private var lastPlayedOriginName = ""
+    @AppStorage("lume.playMode") private var storedPlayMode = PlayMode.sequential.rawValue
 
     private let api: APIClient
     private var timeObserver: Any?
@@ -97,6 +103,9 @@ final class PlayerViewModel: ObservableObject {
 
     init(api: APIClient = .shared) {
         self.api = api
+        if let restoredMode = PlayMode(rawValue: storedPlayMode) {
+            playMode = restoredMode
+        }
         configureRemoteCommands()
     }
 
