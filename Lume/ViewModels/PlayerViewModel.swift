@@ -95,11 +95,23 @@ final class PlayerViewModel: ObservableObject {
     private var pendingStatsSeconds: Double = 0
     private var currentMediaID: String?
     @Published private(set) var playlist: [String] = []
-    private var currentIndex: Int?
     private var remoteConfigured = false
     private let statsStore = PlaybackStatsStore.shared
     private var queueLoadTask: Task<Void, Never>?
     private var isAdvancingTrack = false
+
+    /// 当前曲在队列中的位置。以 mediaID 动态推导，而不是单独维护一份 index，
+    /// 这样队列重建、曲目被删除后都不会出现下标与当前曲对不上的情况。
+    private var currentIndex: Int? {
+        guard let currentMediaID else { return nil }
+        return playlist.firstIndex(of: currentMediaID)
+    }
+
+    /// 随机播放当前这一轮剩下的曲目。每轮是整个队列的一个随机排列，
+    /// 放完（抽空）才洗下一轮。
+    private var shuffleRemaining: [String] = []
+    /// 洗这一轮时的队列快照，队列一变（重新 setQueue、删歌）就作废重洗。
+    private var shufflePoolSignature: [String] = []
 
     init(api: APIClient = .shared) {
         self.api = api
@@ -110,12 +122,17 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func setQueue(ids: [String], currentID: String, origin: PlayOrigin = .unknown) {
+        // 队列或起点曲变化 = 新的播放会话，随机播放重新开一轮；
+        // 只是重新进播放页（同一个队列、同一首）则保留已抽过的池子。
+        let isNewSession = playlist != ids || currentMediaID != currentID
         playlist = ids
-        currentIndex = ids.firstIndex(of: currentID)
         playOrigin = origin
         persistOrigin(origin)
         persistQueue(ids)
         loadQueueDetails(ids)
+        if isNewSession {
+            resetShufflePool()
+        }
     }
 
     func load(id: String, autoPlay: Bool) async {
@@ -168,8 +185,7 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func playFromQueue(id: String) {
-        guard let index = playlist.firstIndex(of: id) else { return }
-        currentIndex = index
+        guard playlist.contains(id) else { return }
         Task { await load(id: id, autoPlay: true) }
     }
 
@@ -228,7 +244,6 @@ final class PlayerViewModel: ObservableObject {
         guard let index = currentIndex else { return }
         let prevIndex = index - 1
         guard prevIndex >= 0 else { return }
-        currentIndex = prevIndex
         Task { await load(id: playlist[prevIndex], autoPlay: true) }
     }
 
@@ -239,7 +254,7 @@ final class PlayerViewModel: ObservableObject {
         let nextID = nextTrackIDAfterDeletingCurrent(id: deletedID)
 
         try await api.deleteMedia(id: deletedID)
-        removeFromQueue(id: deletedID, nextID: nextID)
+        removeFromQueue(id: deletedID)
 
         if let nextID {
             await load(id: nextID, autoPlay: true)
@@ -424,8 +439,9 @@ final class PlayerViewModel: ObservableObject {
     }
 
     private func advanceTrack(auto: Bool) {
-        guard let index = currentIndex, !playlist.isEmpty else { return }
+        guard !playlist.isEmpty else { return }
         guard !isAdvancingTrack else { return }
+        guard let currentID = currentMediaID else { return }
         isAdvancingTrack = true
 
         if playMode == .singleLoop, auto {
@@ -434,16 +450,22 @@ final class PlayerViewModel: ObservableObject {
         }
 
         if playMode == .shuffle {
-            let nextIndex = randomIndex(excluding: index)
-            currentIndex = nextIndex
-            loadAdvancingTrack(id: playlist[nextIndex])
+            guard let nextID = nextShuffleID(excluding: currentID) else {
+                isAdvancingTrack = false
+                return
+            }
+            loadAdvancingTrack(id: nextID)
             return
         }
 
-        let nextIndex = index + 1
-        let wrappedIndex = nextIndex < playlist.count ? nextIndex : 0
-        currentIndex = wrappedIndex
-        loadAdvancingTrack(id: playlist[wrappedIndex])
+        let nextIndex: Int
+        if let index = playlist.firstIndex(of: currentID) {
+            let candidate = index + 1
+            nextIndex = candidate < playlist.count ? candidate : 0
+        } else {
+            nextIndex = 0
+        }
+        loadAdvancingTrack(id: playlist[nextIndex])
     }
 
     private func loadAdvancingTrack(id: String) {
@@ -472,13 +494,33 @@ final class PlayerViewModel: ObservableObject {
         }
     }
 
-    private func randomIndex(excluding index: Int) -> Int {
-        guard playlist.count > 1 else { return index }
-        var nextIndex = index
-        while nextIndex == index {
-            nextIndex = Int.random(in: 0..<playlist.count)
+    /// 真正的随机播放：每轮把整个队列洗牌成一个排列，按顺序放完再洗下一轮，
+    /// 所以一轮之内每首歌只会出现一次（而不是随机跳转造成的反复横跳）。
+    private func nextShuffleID(excluding currentID: String) -> String? {
+        guard !playlist.isEmpty else { return nil }
+
+        // 队列变了（重新 setQueue、删歌等）就作废当前这轮，重新洗。
+        if shufflePoolSignature != playlist {
+            shufflePoolSignature = playlist
+            shuffleRemaining = []
         }
-        return nextIndex
+
+        // 一轮放完 → 洗下一轮。池子是从末尾取的，所以保证新一轮第一首
+        // 不是刚播完的那首，避免跨轮处出现连续重复。
+        if shuffleRemaining.isEmpty {
+            shuffleRemaining = playlist.shuffled()
+            if shuffleRemaining.count > 1, shuffleRemaining.last == currentID {
+                let swapIndex = Int.random(in: 0..<(shuffleRemaining.count - 1))
+                shuffleRemaining.swapAt(swapIndex, shuffleRemaining.count - 1)
+            }
+        }
+
+        return shuffleRemaining.popLast()
+    }
+
+    private func resetShufflePool() {
+        shuffleRemaining = []
+        shufflePoolSignature = []
     }
 
     private func loadQueueDetails(_ ids: [String]) {
@@ -553,26 +595,19 @@ final class PlayerViewModel: ObservableObject {
     private func nextTrackIDAfterDeletingCurrent(id: String) -> String? {
         guard !playlist.isEmpty else { return nil }
 
-        if let index = currentIndex, playlist.indices.contains(index), playlist[index] == id {
-            guard playlist.count > 1 else { return nil }
-            let nextIndex = index + 1 < playlist.count ? index + 1 : 0
-            return playlist[nextIndex]
+        guard let index = playlist.firstIndex(of: id) else {
+            return playlist.first(where: { $0 != id })
         }
-
-        return playlist.first(where: { $0 != id })
+        guard playlist.count > 1 else { return nil }
+        let nextIndex = index + 1 < playlist.count ? index + 1 : 0
+        return playlist[nextIndex]
     }
 
-    private func removeFromQueue(id: String, nextID: String?) {
+    private func removeFromQueue(id: String) {
         let updatedPlaylist = playlist.filter { $0 != id }
         playlist = updatedPlaylist
         persistQueue(updatedPlaylist)
         loadQueueDetails(updatedPlaylist)
-
-        if let nextID {
-            currentIndex = updatedPlaylist.firstIndex(of: nextID)
-        } else {
-            currentIndex = nil
-        }
     }
 
     private func clearPlaybackState() {
@@ -587,7 +622,7 @@ final class PlayerViewModel: ObservableObject {
         errorMessage = nil
         queueDetails = []
         playlist = []
-        currentIndex = nil
+        resetShufflePool()
         playOrigin = .unknown
         isMiniVisible = false
         presentExpanded = false

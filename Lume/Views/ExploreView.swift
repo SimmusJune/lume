@@ -169,13 +169,16 @@ struct ExploreView: View {
     }
 
     private func play(item: MediaItem) {
-        let origin = playback.playOrigin
         Task {
-            if origin != .library {
-                let libraryQueue = await viewModel.fetchLibraryQueueIDs()
-                let queue = libraryQueue.isEmpty ? [item.id] : libraryQueue
-                playback.setQueue(ids: queue, currentID: item.id, origin: .library)
+            // 无条件重建队列：否则重复从曲库点歌时队列还是上一次的，
+            // 当前曲在队列里的位置会和实际播放的对不上。
+            var queue = await viewModel.fetchLibraryQueueIDs()
+            if queue.isEmpty {
+                queue = [item.id]
+            } else if !queue.contains(item.id) {
+                queue.insert(item.id, at: 0)
             }
+            playback.setQueue(ids: queue, currentID: item.id, origin: .library)
             await playback.load(id: item.id, autoPlay: true)
             playback.isMiniVisible = true
             playback.presentExpanded = false
