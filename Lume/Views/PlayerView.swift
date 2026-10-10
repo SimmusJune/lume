@@ -303,7 +303,17 @@ struct PlayerView: View {
                 Text(subtitleText)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Color(hex: "5e636a"))
-               
+
+                if viewModel.playMode == .review {
+                    Text(viewModel.playMode.label)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color(hex: "0f6e56"))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule().fill(Color(hex: "e1f5ee"))
+                        )
+                }
             }
 
             Text(sourceLabelText)
@@ -516,6 +526,7 @@ private struct QueueSheet: View {
                             QueueRow(
                                 detail: detail,
                                 isCurrent: viewModel.detail?.id == detail.id,
+                                showsReviewLevel: viewModel.playMode == .review,
                                 onTap: { viewModel.playFromQueue(id: detail.id) }
                             )
                         }
@@ -535,6 +546,7 @@ private struct QueueSheet: View {
 private struct QueueRow: View {
     let detail: MediaDetail
     let isCurrent: Bool
+    let showsReviewLevel: Bool
     let onTap: () -> Void
 
     var body: some View {
@@ -563,6 +575,10 @@ private struct QueueRow: View {
                 }
 
                 Spacer()
+
+                if showsReviewLevel {
+                    ReviewLevelBadge(mediaID: detail.id)
+                }
 
                 if isCurrent {
                     Text("Now Playing")
@@ -610,6 +626,31 @@ private struct QueueRow: View {
         let minutes = totalSeconds / 60
         let seconds = totalSeconds % 60
         return String(format: "%d:%02d", minutes, seconds)
+    }
+}
+
+/// 队列行末尾的复习档位徽标：今天到期的提示「Due」，否则显示当前档位。
+/// 和 PlayCountBadge 一样自己订阅 store，不靠外部传值。
+private struct ReviewLevelBadge: View {
+    let mediaID: String
+    @ObservedObject private var store = SpacedRepetitionStore.shared
+
+    var body: some View {
+        let state = store.state(for: mediaID)
+        let isDue = SpacedRepetitionScheduler.isDue(state, now: Date())
+
+        HStack(spacing: 4) {
+            Image(systemName: "brain.head.profile")
+                .font(.system(size: 10, weight: .semibold))
+            Text(isDue ? "Due" : "Lv\(state.box)")
+                .font(.system(size: 11, weight: .semibold))
+        }
+        .foregroundStyle(isDue ? Color(hex: "185fa5") : Color(hex: "7c8188"))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            Capsule().fill(isDue ? Color(hex: "e6f1fb") : Color(hex: "f1efe8"))
+        )
     }
 }
 

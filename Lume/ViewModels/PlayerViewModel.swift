@@ -15,12 +15,16 @@ final class PlayerViewModel: ObservableObject {
         case sequential
         case singleLoop
         case shuffle
+        /// 间隔重复：按每首曲目的掌握档位重排队列，到期复习的优先，新歌在一次会话里
+        /// 重复 2~3 次且间隔逐步拉长。见 `SpacedRepetitionScheduler`。
+        case review
 
         var iconName: String {
             switch self {
             case .sequential: return "repeat"
             case .singleLoop: return "repeat.1"
             case .shuffle: return "shuffle"
+            case .review: return "brain.head.profile"
             }
         }
 
@@ -29,6 +33,7 @@ final class PlayerViewModel: ObservableObject {
             case .sequential: return "Repeat All"
             case .singleLoop: return "Repeat One"
             case .shuffle: return "Shuffle"
+            case .review: return "Smart Review"
             }
         }
     }
@@ -74,10 +79,21 @@ final class PlayerViewModel: ObservableObject {
         didSet {
             guard oldValue != playMode else { return }
             storedPlayMode = playMode.rawValue
+            // 切进 Smart Review 就立刻按复习状态重排一次，当前这首保持在队首。
+            // 注意：这里不能碰 api，init 里不会触发 didSet，所以是安全的。
+            rebuildReviewQueueIfNeeded()
         }
     }
     @Published private(set) var playOrigin: PlayOrigin = .unknown
     @Published private(set) var queueDetails: [MediaDetail] = []
+
+    /// 队列弹窗要展示的顺序。Smart Review 下是重排后的顺序，并且去掉了重复项
+    /// （同一首在一次会话里会出现两三次，直接列出来既乱又会撞 ForEach 的 id）。
+    var displayQueueIDs: [String] {
+        guard playMode == .review, !reviewQueue.isEmpty else { return playlist }
+        var seen: Set<String> = []
+        return reviewQueue.filter { seen.insert($0).inserted }
+    }
 
     @AppStorage("lume.lastPlayedMediaID") private var lastPlayedMediaID = ""
     @AppStorage("lume.lastPlayedQueue") private var lastPlayedQueue = ""
@@ -97,8 +113,17 @@ final class PlayerViewModel: ObservableObject {
     @Published private(set) var playlist: [String] = []
     private var remoteConfigured = false
     private let statsStore = PlaybackStatsStore.shared
+    private let reviewStore = SpacedRepetitionStore.shared
     private var queueLoadTask: Task<Void, Never>?
     private var isAdvancingTrack = false
+
+    /// Smart Review 模式下实际要放的顺序（含同一首的重复出现）。
+    private var reviewQueue: [String] = []
+    /// 本会话里每首已经「救场」插回来的次数，避免一首歌被反复回插。
+    private var reviewRescueCounts: [String: Int] = [:]
+
+    /// 播够这么久再手动切走才算「没通过」，否则只是在挑歌。
+    private static let reviewSkipThresholdSeconds: Double = 3
 
     /// 当前曲在队列中的位置。以 mediaID 动态推导，而不是单独维护一份 index，
     /// 这样队列重建、曲目被删除后都不会出现下标与当前曲对不上的情况。
@@ -129,10 +154,13 @@ final class PlayerViewModel: ObservableObject {
         playOrigin = origin
         persistOrigin(origin)
         persistQueue(ids)
-        loadQueueDetails(ids)
         if isNewSession {
             resetShufflePool()
+            rebuildReviewQueue(placingFirst: currentID)
+        } else if playMode == .review, reviewQueue.isEmpty {
+            rebuildReviewQueue(placingFirst: currentID)
         }
+        loadQueueDetails(displayQueueIDs)
     }
 
     func load(id: String, autoPlay: Bool) async {
@@ -163,6 +191,9 @@ final class PlayerViewModel: ObservableObject {
             )
             let item = AVPlayerItem(url: playbackURL)
             player.replaceCurrentItem(with: item)
+            // 立刻归零：否则新歌刚开始的那一秒里 positionSeconds 还挂着上一首的结尾位置，
+            // 这时候点「下一首」会被 Smart Review 误判成「听完了才跳过」。
+            positionSeconds = 0
             durationSeconds = Double(detail.durationMS) / 1000.0
             observePlayer(item: item)
             NowPlayingManager.updateMetadata(detail: detail, elapsed: 0, duration: durationSeconds, isPlaying: autoPlay)
@@ -205,7 +236,7 @@ final class PlayerViewModel: ObservableObject {
             duration: durationSeconds,
             isPlaying: isPlaying
         )
-        loadQueueDetails(playlist)
+        loadQueueDetails(displayQueueIDs)
     }
 
     func togglePlay() {
@@ -258,6 +289,11 @@ final class PlayerViewModel: ObservableObject {
     func previousTrack() {
         if positionSeconds > 3 {
             seek(to: 0)
+            return
+        }
+        if playMode == .review, let currentID = currentMediaID,
+           let index = reviewQueue.firstIndex(of: currentID), index > 0 {
+            Task { await load(id: reviewQueue[index - 1], autoPlay: true) }
             return
         }
         guard let index = currentIndex else { return }
@@ -409,6 +445,13 @@ final class PlayerViewModel: ObservableObject {
         guard item === player.currentItem else { return }
         isPlaying = false
         NowPlayingManager.updatePlayback(elapsed: durationSeconds, duration: durationSeconds, isPlaying: false)
+        // 完整播完一遍才算一次：播放次数 +1，并写入历史记录。
+        if let finishedID = currentMediaID {
+            statsStore.recordCompletedPlayback(mediaID: finishedID)
+            // 完整听完 = 复习通过：跨天档位 +1，下次到期时间顺延。
+            // 这里不区分播放模式——档位要一直累积，切到 Smart Review 才有真实依据。
+            reviewStore.recordCompleted(mediaID: finishedID)
+        }
         Task { await sendProgress(event: "end") }
         advanceTrack(auto: true)
     }
@@ -465,6 +508,11 @@ final class PlayerViewModel: ObservableObject {
 
         if playMode == .singleLoop, auto {
             restartCurrentTrack()
+            return
+        }
+
+        if playMode == .review {
+            advanceInReviewQueue(currentID: currentID, auto: auto)
             return
         }
 
@@ -542,6 +590,76 @@ final class PlayerViewModel: ObservableObject {
         shufflePoolSignature = []
     }
 
+    // MARK: - Smart Review（间隔重复）
+
+    /// 切进 Smart Review 时顺手重排，且不改动当前正在放的那首。
+    private func rebuildReviewQueueIfNeeded() {
+        guard playMode == .review else { return }
+        rebuildReviewQueue(placingFirst: currentMediaID)
+        loadQueueDetails(displayQueueIDs)
+    }
+
+    /// 按复习状态重排 Smart Review 的播放顺序。
+    /// `placingFirst` 会被提到队首，保证用户点的那首立刻播，而不是被排到别处。
+    private func rebuildReviewQueue(placingFirst anchor: String?) {
+        reviewRescueCounts = [:]
+        var queue = SpacedRepetitionScheduler.buildQueue(pool: playlist, states: reviewStore.states)
+        guard !queue.isEmpty else {
+            reviewQueue = []
+            return
+        }
+        if let anchor, let index = queue.firstIndex(of: anchor), index != 0 {
+            queue.remove(at: index)
+            queue.insert(anchor, at: 0)
+        }
+        reviewQueue = queue
+    }
+
+    private func advanceInReviewQueue(currentID: String, auto: Bool) {
+        // 用户手动切走 = 这首没通过：先退档，再在本会话里把它插回来听一次。
+        // 自动播完不算跳过，那条路走的是 itemDidFinish。
+        if !auto {
+            noteReviewSkip(currentID)
+        }
+
+        if reviewQueue.isEmpty || !reviewQueue.contains(currentID) {
+            rebuildReviewQueue(placingFirst: currentID)
+            guard let first = reviewQueue.first, first != currentID else {
+                isAdvancingTrack = false
+                return
+            }
+            loadAdvancingTrack(id: first)
+            return
+        }
+
+        guard let index = reviewQueue.firstIndex(of: currentID) else {
+            isAdvancingTrack = false
+            return
+        }
+
+        let nextIndex = index + 1
+        if nextIndex < reviewQueue.count {
+            loadAdvancingTrack(id: reviewQueue[nextIndex])
+        } else {
+            // 一轮放完就回到队首；救场额度一并重置，新的一轮重新算。
+            reviewRescueCounts = [:]
+            loadAdvancingTrack(id: reviewQueue[0])
+        }
+    }
+
+    /// 记录一次「没听完就切走」。只有已经播了几秒才算数——
+    /// 家长连点下一首挑歌，不该被当成孩子跳过了这首歌。
+    private func noteReviewSkip(_ id: String) {
+        guard positionSeconds >= Self.reviewSkipThresholdSeconds else { return }
+        reviewStore.recordSkipped(mediaID: id)
+
+        // 本会话里再给它一次机会，插到隔 2 首之后；同一首只救一次，免得反复出现惹人烦。
+        guard (reviewRescueCounts[id] ?? 0) < 1 else { return }
+        guard let index = reviewQueue.firstIndex(of: id) else { return }
+        reviewQueue.insert(id, at: min(reviewQueue.count, index + 3))
+        reviewRescueCounts[id, default: 0] += 1
+    }
+
     private func loadQueueDetails(_ ids: [String]) {
         queueLoadTask?.cancel()
         guard !ids.isEmpty else {
@@ -612,21 +730,25 @@ final class PlayerViewModel: ObservableObject {
     }
 
     private func nextTrackIDAfterDeletingCurrent(id: String) -> String? {
-        guard !playlist.isEmpty else { return nil }
+        // Smart Review 下真正在放的是重排后的队列，删歌要按那个顺序找下一首。
+        let order = playMode == .review && !reviewQueue.isEmpty ? reviewQueue : playlist
+        guard !order.isEmpty else { return nil }
 
-        guard let index = playlist.firstIndex(of: id) else {
-            return playlist.first(where: { $0 != id })
+        guard let index = order.firstIndex(of: id) else {
+            return order.first(where: { $0 != id })
         }
-        guard playlist.count > 1 else { return nil }
-        let nextIndex = index + 1 < playlist.count ? index + 1 : 0
-        return playlist[nextIndex]
+        guard order.count > 1 else { return nil }
+        let nextIndex = index + 1 < order.count ? index + 1 : 0
+        return order[nextIndex]
     }
 
     private func removeFromQueue(id: String) {
         let updatedPlaylist = playlist.filter { $0 != id }
         playlist = updatedPlaylist
+        reviewQueue.removeAll { $0 == id }
+        reviewRescueCounts[id] = nil
         persistQueue(updatedPlaylist)
-        loadQueueDetails(updatedPlaylist)
+        loadQueueDetails(displayQueueIDs)
     }
 
     private func clearPlaybackState() {
@@ -642,6 +764,8 @@ final class PlayerViewModel: ObservableObject {
         queueDetails = []
         playlist = []
         resetShufflePool()
+        reviewQueue = []
+        reviewRescueCounts = [:]
         playOrigin = .unknown
         isMiniVisible = false
         presentExpanded = false

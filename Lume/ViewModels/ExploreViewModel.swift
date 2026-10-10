@@ -77,9 +77,11 @@ final class ExploreViewModel: ObservableObject {
             let report = try await api.importJSON(url: url)
             let response = try await api.fetchMediaList(type: selectedFilter.mediaType, keyword: nil)
             items = visibleItems(from: response.items)
-            importSummary = report.didImportPlaybackStats
-                ? "Imported \(report.inserted) new, updated \(report.updated), skipped \(report.skipped), and restored playback stats."
-                : "Imported \(report.inserted) new, updated \(report.updated), skipped \(report.skipped)."
+            var restored: [String] = []
+            if report.didImportPlaybackStats { restored.append("playback stats") }
+            if report.didImportReviewStates { restored.append("review progress") }
+            let restoredSuffix = restored.isEmpty ? "" : ", and restored \(restored.joined(separator: " & "))"
+            importSummary = "Imported \(report.inserted) new, updated \(report.updated), skipped \(report.skipped)\(restoredSuffix)."
         } catch {
             errorMessage = "Failed to import JSON."
         }

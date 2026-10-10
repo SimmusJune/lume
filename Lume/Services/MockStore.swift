@@ -5,6 +5,21 @@ struct ImportReport: Hashable {
     let updated: Int
     let skipped: Int
     let didImportPlaybackStats: Bool
+    let didImportReviewStates: Bool
+
+    init(
+        inserted: Int,
+        updated: Int,
+        skipped: Int,
+        didImportPlaybackStats: Bool,
+        didImportReviewStates: Bool = false
+    ) {
+        self.inserted = inserted
+        self.updated = updated
+        self.skipped = skipped
+        self.didImportPlaybackStats = didImportPlaybackStats
+        self.didImportReviewStates = didImportReviewStates
+    }
 
     var total: Int { inserted + updated + skipped }
 }
@@ -237,6 +252,7 @@ actor LocalLibraryStore {
 
         let didChangeFavorites = importFavorites(from: payload.favoriteGroups)
         let didImportPlaybackStats = importPlaybackStats(from: payload.playbackStats)
+        let didImportReviewStates = importReviewStates(from: payload.reviewStates)
         if didChangeMedia || didChangeFavorites {
             try persist()
         }
@@ -245,7 +261,8 @@ actor LocalLibraryStore {
             inserted: inserted,
             updated: updated,
             skipped: skipped,
-            didImportPlaybackStats: didImportPlaybackStats
+            didImportPlaybackStats: didImportPlaybackStats,
+            didImportReviewStates: didImportReviewStates
         )
     }
 
@@ -273,10 +290,11 @@ actor LocalLibraryStore {
             )
         }
         let payload = LibraryExportPayload(
-            version: 2,
+            version: 3,
             items: records,
             favoriteGroups: favoriteGroups,
-            playbackStats: PlaybackStatsStorage.loadSnapshot()
+            playbackStats: PlaybackStatsStorage.loadSnapshot(),
+            reviewStates: SpacedRepetitionStorage.loadSnapshot()
         )
         return try encoder.encode(payload)
     }
@@ -539,7 +557,7 @@ actor LocalLibraryStore {
     private func decodeLibraryImportPayload(from data: Data) throws -> LibraryImportPayload {
         let decoder = JSONDecoder()
         if let records = try? decoder.decode([MediaImportRecord].self, from: data) {
-            return LibraryImportPayload(version: nil, items: records, favoriteGroups: nil, playbackStats: nil)
+            return LibraryImportPayload(version: nil, items: records, favoriteGroups: nil, playbackStats: nil, reviewStates: nil)
         }
         if let payload = try? decoder.decode(LibraryImportPayload.self, from: data) {
             return payload
@@ -638,6 +656,15 @@ actor LocalLibraryStore {
         let current = PlaybackStatsStorage.loadSnapshot()
         guard current != normalized else { return false }
         PlaybackStatsStorage.saveSnapshot(normalized)
+        return true
+    }
+
+    private func importReviewStates(from snapshot: ReviewSnapshot?) -> Bool {
+        guard let snapshot else { return false }
+        let normalized = snapshot.normalized
+        let current = SpacedRepetitionStorage.loadSnapshot()
+        guard current != normalized else { return false }
+        SpacedRepetitionStorage.saveSnapshot(normalized)
         return true
     }
 
@@ -773,12 +800,14 @@ private struct LibraryExportPayload: Encodable {
     let items: [MediaExportRecord]
     let favoriteGroups: [FavoriteGroupExportRecord]
     let playbackStats: PlaybackStatsSnapshot
+    let reviewStates: ReviewSnapshot
 
     enum CodingKeys: String, CodingKey {
         case version
         case items
         case favoriteGroups = "favorite_groups"
         case playbackStats = "playback_stats"
+        case reviewStates = "review_states"
     }
 }
 
@@ -787,12 +816,14 @@ private struct LibraryImportPayload: Decodable {
     let items: [MediaImportRecord]
     let favoriteGroups: [FavoriteGroupImportRecord]?
     let playbackStats: PlaybackStatsSnapshot?
+    let reviewStates: ReviewSnapshot?
 
     enum CodingKeys: String, CodingKey {
         case version
         case items
         case favoriteGroups = "favorite_groups"
         case playbackStats = "playback_stats"
+        case reviewStates = "review_states"
     }
 }
 

@@ -37,6 +37,7 @@ final class APIClient {
     func importJSON(url: URL) async throws -> ImportReport {
         let report = try await library.importJSON(from: url)
         await PlaybackStatsStore.shared.reloadFromStorage()
+        await SpacedRepetitionStore.shared.reloadFromStorage()
         return report
     }
 
