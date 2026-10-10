@@ -45,10 +45,14 @@ struct MediaCard: View {
                     .layoutPriority(1)
                 }
 
-                Text(item.type == .audio ? "Music" : "Video")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.65))
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(item.type == .audio ? "Music" : "Video")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.white.opacity(0.65))
+                        .lineLimit(1)
+
+                    PlayCountBadge(mediaID: item.id)
+                }
             }
 
             Spacer(minLength: 0)
@@ -187,6 +191,24 @@ struct MediaCard: View {
         let minutes = totalSeconds / 60
         let seconds = totalSeconds % 60
         return String(format: "%d:%02d", minutes, seconds)
+    }
+}
+
+/// 卡片右下角的播放次数徽标：只有完整播过（次数 > 0）才显示。
+struct PlayCountBadge: View {
+    let mediaID: String
+    @ObservedObject private var stats = PlaybackStatsStore.shared
+
+    var body: some View {
+        if stats.playCount(for: mediaID) > 0 {
+            HStack(spacing: 3) {
+                Image(systemName: "play.circle.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                Text("\(stats.playCount(for: mediaID))")
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .foregroundStyle(Color(hex: "9dff85"))
+        }
     }
 }
 

@@ -21,6 +21,7 @@ struct ProfileView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     header
                     totalStatsCard
+                    historyCard
                     statsRangeCard
                     signOutButton
                     versionFooter
@@ -79,6 +80,49 @@ struct ProfileView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 18)
         .background(cardBackground)
+    }
+
+    private var historyCard: some View {
+        NavigationLink {
+            PlaybackHistoryView()
+        } label: {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.08))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Play History")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+
+                    Text(historySubtitle)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.white.opacity(0.6))
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.5))
+            }
+            .padding(14)
+            .background(cardBackground)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var historySubtitle: String {
+        let total = stats.totalPlays
+        guard total > 0 else { return "No plays recorded yet" }
+        let recent = stats.recentHistory(hours: 24).count
+        return "\(recent) in the last 24h · \(total) total"
     }
 
     private var statsRangeCard: some View {
