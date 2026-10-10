@@ -9,6 +9,7 @@ enum APIError: Error {
 final class APIClient {
     static let shared = APIClient()
     static let didDeleteMedia = Notification.Name("APIClientDidDeleteMedia")
+    static let didUpdateMedia = Notification.Name("APIClientDidUpdateMedia")
 
     var authorizationToken: String?
 
@@ -51,6 +52,11 @@ final class APIClient {
     func deleteMedia(id: String) async throws {
         try await library.deleteMedia(id: id)
         NotificationCenter.default.post(name: Self.didDeleteMedia, object: id)
+    }
+
+    func updateMedia(id: String, title: String, subtitle: String?, tags: [String]?) async throws {
+        try await library.updateMedia(id: id, title: title, subtitle: subtitle, tags: tags)
+        NotificationCenter.default.post(name: Self.didUpdateMedia, object: id)
     }
 
     func postProgress(id: String, positionMS: Int, event: String? = nil) async throws {

@@ -17,6 +17,9 @@ final class TagPlaylistsViewModel: ObservableObject {
         }
     }
 
+    /// 没有 tag 的曲目会归到这个分组下。
+    static let untaggedGroupName = "Untagged"
+
     @Published var groups: [TagGroup] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
@@ -43,9 +46,9 @@ final class TagPlaylistsViewModel: ObservableObject {
         var grouped: [String: [MediaItem]] = [:]
 
         for item in items {
-            let tags = normalizedTags(item.tags)
+            let tags = Self.normalizedTags(item.tags)
             if tags.isEmpty {
-                grouped["Untagged", default: []].append(item)
+                grouped[Self.untaggedGroupName, default: []].append(item)
             } else {
                 for tag in tags {
                     grouped[tag, default: []].append(item)
@@ -62,7 +65,15 @@ final class TagPlaylistsViewModel: ObservableObject {
         }
     }
 
-    private func normalizedTags(_ tags: [String]?) -> [String] {
+    /// 某个曲目是否属于指定分组。改完标签后各详情页用它重新判定成员，
+    /// 这样编辑后加进来的、被移出去的曲目都能立刻反映出来。
+    static func belongsToGroup(_ item: MediaItem, tag: String) -> Bool {
+        let tags = normalizedTags(item.tags)
+        if tags.isEmpty { return tag == untaggedGroupName }
+        return tags.contains(tag)
+    }
+
+    private static func normalizedTags(_ tags: [String]?) -> [String] {
         guard let tags else { return [] }
         return tags
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }

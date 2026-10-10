@@ -6,6 +6,7 @@ struct FavoritesListView: View {
     @StateObject private var viewModel: FavoriteListViewModel
     @State private var draggedItem: FavoriteListItem?
     @State private var favoriteTarget: MediaItem?
+    @State private var editTarget: MediaItem?
     @State private var pendingDelete: FavoriteListItem?
     @State private var showDeleteAlert = false
 
@@ -51,6 +52,8 @@ struct FavoritesListView: View {
                                     }, onDelete: {
                                         pendingDelete = item
                                         showDeleteAlert = true
+                                    }, onEdit: {
+                                        editTarget = mediaItem(from: item)
                                     })
                                     .contentShape(Rectangle())
                                     .onTapGesture {
@@ -76,6 +79,8 @@ struct FavoritesListView: View {
                                     }, onDelete: {
                                         pendingDelete = item
                                         showDeleteAlert = true
+                                    }, onEdit: {
+                                        editTarget = mediaItem(from: item)
                                     })
                                     .contentShape(Rectangle())
                                     .onTapGesture {
@@ -110,6 +115,9 @@ struct FavoritesListView: View {
         }) { item in
             FavoritesPickerSheet(mediaID: item.id, mediaType: item.type)
         }
+        .sheet(item: $editTarget) { item in
+            MediaEditSheet(mediaID: item.id)
+        }
         .alert("Delete this item?", isPresented: $showDeleteAlert) {
             Button("Delete", role: .destructive) {
                 guard let item = pendingDelete else { return }
@@ -129,6 +137,9 @@ struct FavoritesListView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: APIClient.didDeleteMedia)) { _ in
+            Task { await viewModel.load() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: APIClient.didUpdateMedia)) { _ in
             Task { await viewModel.load() }
         }
     }

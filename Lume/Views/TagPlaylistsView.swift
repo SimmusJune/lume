@@ -55,6 +55,9 @@ struct TagPlaylistsView: View {
         .onReceive(NotificationCenter.default.publisher(for: APIClient.didDeleteMedia)) { _ in
             Task { await viewModel.load() }
         }
+        .onReceive(NotificationCenter.default.publisher(for: APIClient.didUpdateMedia)) { _ in
+            Task { await viewModel.load() }
+        }
     }
 }
 
@@ -98,6 +101,7 @@ private struct TagPlaylistDetailView: View {
     @EnvironmentObject private var playback: PlayerViewModel
     @State private var items: [MediaItem]
     @State private var favoriteTarget: MediaItem?
+    @State private var editTarget: MediaItem?
     @State private var pendingDelete: MediaItem?
     @State private var showDeleteAlert = false
 
@@ -128,6 +132,8 @@ private struct TagPlaylistDetailView: View {
                             }, onDelete: {
                                 pendingDelete = item
                                 showDeleteAlert = true
+                            }, onEdit: {
+                                editTarget = item
                             })
                             .contentShape(Rectangle())
                             .onTapGesture {
@@ -145,6 +151,9 @@ private struct TagPlaylistDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $favoriteTarget) { item in
             FavoritesPickerSheet(mediaID: item.id, mediaType: item.type)
+        }
+        .sheet(item: $editTarget) { item in
+            MediaEditSheet(mediaID: item.id)
         }
         .alert("Delete this item?", isPresented: $showDeleteAlert) {
             Button("Delete", role: .destructive) {
@@ -166,6 +175,9 @@ private struct TagPlaylistDetailView: View {
             guard let deletedID = notification.object as? String else { return }
             items.removeAll { $0.id == deletedID }
         }
+        .onReceive(NotificationCenter.default.publisher(for: APIClient.didUpdateMedia)) { _ in
+            Task { await reloadItems() }
+        }
     }
 
     private func play(item: MediaItem, playlist: [String]) {
@@ -174,6 +186,14 @@ private struct TagPlaylistDetailView: View {
             await playback.load(id: item.id, autoPlay: true)
             playback.isMiniVisible = true
             playback.presentExpanded = false
+        }
+    }
+
+    /// 标签可能被改掉，成员资格要重新判定。
+    private func reloadItems() async {
+        guard let response = try? await APIClient.shared.fetchMediaList(type: .audio, keyword: nil) else { return }
+        await MainActor.run {
+            items = response.items.filter { TagPlaylistsViewModel.belongsToGroup($0, tag: tag) }
         }
     }
 

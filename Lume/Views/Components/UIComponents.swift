@@ -22,6 +22,7 @@ struct MediaCard: View {
     let item: MediaItem
     var onFavorite: (() -> Void)? = nil
     var onDelete: (() -> Void)? = nil
+    var onEdit: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 10) {
@@ -53,6 +54,18 @@ struct MediaCard: View {
             Spacer(minLength: 0)
 
             HStack(spacing: 8) {
+                if let onEdit {
+                    Button {
+                        onEdit()
+                    } label: {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Color.white.opacity(0.8))
+                            .padding(6)
+                    }
+                    .buttonStyle(.plain)
+                }
+
                 if let onFavorite {
                     Button {
                         onFavorite()

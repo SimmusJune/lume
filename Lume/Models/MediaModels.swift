@@ -53,9 +53,10 @@ struct MediaDetail: Identifiable, Codable, Hashable {
     let durationMS: Int
     let status: String
     let thumbURL: URL?
+    let tags: [String]?
     let sources: [MediaSource]
 
-    init(id: String, type: MediaType, title: String, subtitle: String? = nil, durationMS: Int, status: String, thumbURL: URL?, sources: [MediaSource]) {
+    init(id: String, type: MediaType, title: String, subtitle: String? = nil, durationMS: Int, status: String, thumbURL: URL?, tags: [String]? = nil, sources: [MediaSource]) {
         self.id = id
         self.type = type
         self.title = title
@@ -63,6 +64,7 @@ struct MediaDetail: Identifiable, Codable, Hashable {
         self.durationMS = durationMS
         self.status = status
         self.thumbURL = thumbURL
+        self.tags = tags
         self.sources = sources
     }
 
@@ -74,6 +76,7 @@ struct MediaDetail: Identifiable, Codable, Hashable {
         case durationMS = "duration_ms"
         case status
         case thumbURL = "thumb_url"
+        case tags
         case sources
     }
 }

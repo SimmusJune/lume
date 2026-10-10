@@ -281,6 +281,27 @@ actor LocalLibraryStore {
         return try encoder.encode(payload)
     }
 
+    /// 更新一首媒体的标题 / 副标题 / 标签。标题留空时回退到按 URL 推导的名字，
+    /// 与导入时的规则保持一致；标签会去空白、去空项、去重，全空则置为 nil。
+    func updateMedia(id: String, title: String, subtitle: String?, tags: [String]?) throws {
+        guard let index = state.mediaRecords.firstIndex(where: { $0.id == id }) else {
+            throw APIError.httpStatus(404)
+        }
+
+        let current = state.mediaRecords[index]
+        let updated = current.withEditableFields(
+            title: buildTitle(title, fallbackURL: current.url),
+            subtitle: normalizedNonEmpty(subtitle),
+            tags: dedupedTags(tags)
+        )
+        guard updated != current else { return }
+
+        state.mediaRecords[index] = updated
+        rebuildIndex()
+        refreshFavoriteItems(for: [id])
+        try persist()
+    }
+
     func deleteMedia(id: String) throws {
         guard recordsByID[id] != nil else { return }
         state.mediaRecords.removeAll { $0.id == id }
@@ -542,6 +563,20 @@ actor LocalLibraryStore {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    /// 编辑保存时用：除了去空白、去空项，还按原样去重（保留首次出现的顺序）。
+    private func dedupedTags(_ tags: [String]?) -> [String]? {
+        guard let tags else { return nil }
+        var seen: Set<String> = []
+        var result: [String] = []
+        for tag in tags {
+            let trimmed = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !seen.contains(trimmed) else { continue }
+            seen.insert(trimmed)
+            result.append(trimmed)
+        }
+        return result.isEmpty ? nil : result
+    }
+
     private func buildTitle(_ value: String?, fallbackURL: URL) -> String {
         if let value {
             let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -690,7 +725,24 @@ private struct MediaRecord: Codable, Hashable {
             durationMS: durationMS,
             status: status,
             thumbURL: thumbURL,
+            tags: tags,
             sources: [source]
+        )
+    }
+
+    /// 只替换可编辑的字段，其余（url / type / 时长 / 封面 / 状态 / 格式）保持原样。
+    func withEditableFields(title: String, subtitle: String?, tags: [String]?) -> MediaRecord {
+        MediaRecord(
+            id: id,
+            url: url,
+            type: type,
+            title: title,
+            durationMS: durationMS,
+            thumbURL: thumbURL,
+            status: status,
+            subtitle: subtitle,
+            tags: tags,
+            format: format
         )
     }
 

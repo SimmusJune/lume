@@ -189,6 +189,25 @@ final class PlayerViewModel: ObservableObject {
         Task { await load(id: id, autoPlay: true) }
     }
 
+    /// 正在播的这首被改了标题 / 副标题 / 标签后，刷新详情与队列缓存，
+    /// 免得播放页、锁屏信息还显示旧名字。
+    func refreshDetailIfNeeded(id: String) async {
+        guard currentMediaID == id else { return }
+        guard let updated = try? await api.fetchMediaDetail(id: id) else { return }
+
+        detail = updated
+        if updated.durationMS > 0 {
+            durationSeconds = Double(updated.durationMS) / 1000.0
+        }
+        NowPlayingManager.updateMetadata(
+            detail: updated,
+            elapsed: positionSeconds,
+            duration: durationSeconds,
+            isPlaying: isPlaying
+        )
+        loadQueueDetails(playlist)
+    }
+
     func togglePlay() {
         if isPlaying {
             pause()

@@ -16,6 +16,7 @@ struct PlayerView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var viewModel: PlayerViewModel
     @State private var showFavoritesPicker = false
+    @State private var showEdit = false
     @State private var showQueue = false
     @State private var showDeleteAlert = false
     @State private var shareItem: ShareItem?
@@ -95,6 +96,18 @@ struct PlayerView: View {
                 Text("Loading...")
                     .presentationDetents([.medium])
             }
+        }
+        .sheet(isPresented: $showEdit) {
+            if let detail = viewModel.detail {
+                MediaEditSheet(mediaID: detail.id)
+            } else {
+                Text("Loading...")
+                    .presentationDetents([.medium])
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: APIClient.didUpdateMedia)) { notification in
+            guard let id = notification.object as? String else { return }
+            Task { await viewModel.refreshDetailIfNeeded(id: id) }
         }
         .sheet(isPresented: $showQueue) {
             QueueSheet()
@@ -268,8 +281,22 @@ struct PlayerView: View {
                 Text(viewModel.detail?.title ?? "Loading")
                     .font(.system(size: 24, weight: .bold))
                     .foregroundStyle(Color(hex: "2a2d31"))
+                    .lineLimit(2)
 
-                Spacer()
+                Spacer(minLength: 8)
+
+                Button {
+                    showEdit = true
+                } label: {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color(hex: "2a2d31"))
+                        .frame(width: 32, height: 32)
+                        .background(Color.white.opacity(0.7))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(viewModel.detail == nil)
             }
 
             HStack(spacing: 10) {
