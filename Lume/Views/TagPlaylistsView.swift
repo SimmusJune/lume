@@ -58,6 +58,9 @@ struct TagPlaylistsView: View {
         .onReceive(NotificationCenter.default.publisher(for: APIClient.didUpdateMedia)) { _ in
             Task { await viewModel.load() }
         }
+        .onReceive(NotificationCenter.default.publisher(for: APIClient.didChangeFamilyLibrary)) { _ in
+            Task { await viewModel.load() }
+        }
     }
 }
 
@@ -166,9 +169,9 @@ private struct TagPlaylistDetailView: View {
             }
         } message: {
             if let title = pendingDelete?.title, !title.isEmpty {
-                Text("This removes “\(title)” from the local media library.")
+                Text("This removes “\(title)” from the library.")
             } else {
-                Text("This removes the item from the local media library.")
+                Text("This removes the item from the library.")
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: APIClient.didDeleteMedia)) { notification in
@@ -176,6 +179,9 @@ private struct TagPlaylistDetailView: View {
             items.removeAll { $0.id == deletedID }
         }
         .onReceive(NotificationCenter.default.publisher(for: APIClient.didUpdateMedia)) { _ in
+            Task { await reloadItems() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: APIClient.didChangeFamilyLibrary)) { _ in
             Task { await reloadItems() }
         }
     }

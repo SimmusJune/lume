@@ -95,6 +95,14 @@
 				TargetAttributes = {
 					FC17571B2F3743DA00F84E11 = {
 						CreatedOnToolsVersion = 26.0.1;
+						SystemCapabilities = {
+							com.apple.Push = {
+								enabled = 1;
+							};
+							com.apple.iCloud = {
+								enabled = 1;
+							};
+						};
 					};
 				};
 			};
@@ -268,7 +276,7 @@
 				CODE_SIGN_ENTITLEMENTS = Lume/Lume.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 8PRQAX3V88;
+				DEVELOPMENT_TEAM = 588PY4XY9Y;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Lume/Info.plist;
@@ -283,7 +291,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.haohao.Lume;
+				PRODUCT_BUNDLE_IDENTIFIER = com.funcity.scout;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -304,7 +312,7 @@
 				CODE_SIGN_ENTITLEMENTS = Lume/Lume.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 8PRQAX3V88;
+				DEVELOPMENT_TEAM = 588PY4XY9Y;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Lume/Info.plist;
@@ -319,7 +327,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.haohao.Lume;
+				PRODUCT_BUNDLE_IDENTIFIER = com.funcity.scout;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;

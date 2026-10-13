@@ -20,6 +20,7 @@ struct ProfileView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     header
+                    familyCard
                     totalStatsCard
                     historyCard
                     statsRangeCard
@@ -33,6 +34,35 @@ struct ProfileView: View {
         }
         .navigationTitle("Profile")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var familyCard: some View {
+        NavigationLink {
+            FamilySharingView()
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: "person.3.fill")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 40, height: 40)
+                    .background(Color.white.opacity(0.08), in: Circle())
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Family Library")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+                    Text("Share songs and listening data")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.white.opacity(0.6))
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.5))
+            }
+            .padding(14)
+            .background(cardBackground)
+        }
+        .buttonStyle(.plain)
     }
 
     private var header: some View {

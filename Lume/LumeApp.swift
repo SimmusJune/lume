@@ -10,6 +10,8 @@ import AVFoundation
 
 @main
 struct LumeApp: App {
+    @UIApplicationDelegateAdaptor(FamilyAppDelegate.self) private var appDelegate
+
     init() {
         AudioSessionManager.configurePlayback()
     }

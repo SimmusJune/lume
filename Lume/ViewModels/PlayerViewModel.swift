@@ -95,10 +95,22 @@ final class PlayerViewModel: ObservableObject {
         return reviewQueue.filter { seen.insert($0).inserted }
     }
 
-    @AppStorage("lume.lastPlayedMediaID") private var lastPlayedMediaID = ""
-    @AppStorage("lume.lastPlayedQueue") private var lastPlayedQueue = ""
-    @AppStorage("lume.lastPlayedOriginType") private var lastPlayedOriginType = ""
-    @AppStorage("lume.lastPlayedOriginName") private var lastPlayedOriginName = ""
+    private var lastPlayedMediaID: String {
+        get { storedSessionValue("lastPlayedMediaID") }
+        set { setSessionValue(newValue, for: "lastPlayedMediaID") }
+    }
+    private var lastPlayedQueue: String {
+        get { storedSessionValue("lastPlayedQueue") }
+        set { setSessionValue(newValue, for: "lastPlayedQueue") }
+    }
+    private var lastPlayedOriginType: String {
+        get { storedSessionValue("lastPlayedOriginType") }
+        set { setSessionValue(newValue, for: "lastPlayedOriginType") }
+    }
+    private var lastPlayedOriginName: String {
+        get { storedSessionValue("lastPlayedOriginName") }
+        set { setSessionValue(newValue, for: "lastPlayedOriginName") }
+    }
     @AppStorage("lume.playMode") private var storedPlayMode = PlayMode.sequential.rawValue
 
     private let api: APIClient
@@ -138,8 +150,8 @@ final class PlayerViewModel: ObservableObject {
     /// 洗这一轮时的队列快照，队列一变（重新 setQueue、删歌）就作废重洗。
     private var shufflePoolSignature: [String] = []
 
-    init(api: APIClient = .shared) {
-        self.api = api
+    init(api: APIClient? = nil) {
+        self.api = api ?? APIClient.shared
         if let restoredMode = PlayMode(rawValue: storedPlayMode) {
             playMode = restoredMode
         }
@@ -163,7 +175,7 @@ final class PlayerViewModel: ObservableObject {
         loadQueueDetails(displayQueueIDs)
     }
 
-    func load(id: String, autoPlay: Bool) async {
+    func load(id: String, autoPlay: Bool, resumePosition: Bool = false) async {
         errorMessage = nil
         if currentMediaID == id, detail != nil {
             if autoPlay {
@@ -196,7 +208,14 @@ final class PlayerViewModel: ObservableObject {
             positionSeconds = 0
             durationSeconds = Double(detail.durationMS) / 1000.0
             observePlayer(item: item)
-            NowPlayingManager.updateMetadata(detail: detail, elapsed: 0, duration: durationSeconds, isPlaying: autoPlay)
+            if resumePosition,
+               let savedPosition = FamilySharingManager.shared.resumePositionMS(for: id),
+               savedPosition > 0,
+               savedPosition < max(0, detail.durationMS - 5_000) {
+                positionSeconds = Double(savedPosition) / 1000.0
+                seek(to: positionSeconds)
+            }
+            NowPlayingManager.updateMetadata(detail: detail, elapsed: positionSeconds, duration: durationSeconds, isPlaying: autoPlay)
             if autoPlay {
                 play()
             }
@@ -206,13 +225,14 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func restoreLastPlayedIfNeeded(autoPlay: Bool = false) async {
-        let id = lastPlayedMediaID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let id = (FamilySharingManager.shared.mostRecentProgressMediaID() ?? lastPlayedMediaID)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !id.isEmpty else { return }
         guard detail == nil else { return }
         if let queue = restoreQueue(), queue.contains(id) {
             setQueue(ids: queue, currentID: id, origin: restoreOrigin())
         }
-        await load(id: id, autoPlay: autoPlay)
+        await load(id: id, autoPlay: autoPlay, resumePosition: true)
     }
 
     func playFromQueue(id: String) {
@@ -280,6 +300,12 @@ final class PlayerViewModel: ObservableObject {
             NotificationCenter.default.removeObserver(itemDidFinishObserver)
             self.itemDidFinishObserver = nil
         }
+    }
+
+    func resetForLibrarySwitch() {
+        let miniWasVisible = isMiniVisible
+        clearPlaybackState(clearSavedSession: false)
+        isMiniVisible = miniWasVisible
     }
 
     func nextTrack() {
@@ -751,7 +777,7 @@ final class PlayerViewModel: ObservableObject {
         loadQueueDetails(displayQueueIDs)
     }
 
-    private func clearPlaybackState() {
+    private func clearPlaybackState(clearSavedSession: Bool = true) {
         teardown()
         queueLoadTask?.cancel()
         pause()
@@ -773,10 +799,20 @@ final class PlayerViewModel: ObservableObject {
         lastProgressSentAt = 0
         lastStatsPosition = 0
         pendingStatsSeconds = 0
-        lastPlayedMediaID = ""
-        lastPlayedQueue = ""
-        lastPlayedOriginType = ""
-        lastPlayedOriginName = ""
+        if clearSavedSession {
+            lastPlayedMediaID = ""
+            lastPlayedQueue = ""
+            lastPlayedOriginType = ""
+            lastPlayedOriginName = ""
+        }
         NowPlayingManager.clear()
+    }
+
+    private func storedSessionValue(_ key: String) -> String {
+        UserDefaults.standard.string(forKey: FamilySharingManager.shared.sessionStoragePrefix + key) ?? ""
+    }
+
+    private func setSessionValue(_ value: String, for key: String) {
+        UserDefaults.standard.set(value, forKey: FamilySharingManager.shared.sessionStoragePrefix + key)
     }
 }

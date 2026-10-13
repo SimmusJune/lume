@@ -131,15 +131,18 @@ struct FavoritesListView: View {
             if viewModel.supportsEditing {
                 Text("This removes the item from the current favorites group.")
             } else if let title = pendingDelete?.title, !title.isEmpty {
-                Text("This removes “\(title)” from the local media library.")
+                Text("This removes “\(title)” from the library.")
             } else {
-                Text("This removes the item from the local media library.")
+                Text("This removes the item from the library.")
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: APIClient.didDeleteMedia)) { _ in
             Task { await viewModel.load() }
         }
         .onReceive(NotificationCenter.default.publisher(for: APIClient.didUpdateMedia)) { _ in
+            Task { await viewModel.load() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: APIClient.didChangeFamilyLibrary)) { _ in
             Task { await viewModel.load() }
         }
     }

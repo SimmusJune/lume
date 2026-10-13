@@ -126,9 +126,9 @@ struct ExploreView: View {
                 }
             } message: {
                 if let title = pendingDelete?.title, !title.isEmpty {
-                    Text("This removes “\(title)” from the local media library.")
+                    Text("This removes “\(title)” from the library.")
                 } else {
-                    Text("This removes the item from the local media library.")
+                    Text("This removes the item from the library.")
                 }
             }
             .sheet(item: $favoriteTarget) { item in
@@ -165,6 +165,9 @@ struct ExploreView: View {
             Task { await refreshVisibleSection() }
         }
         .onReceive(NotificationCenter.default.publisher(for: APIClient.didUpdateMedia)) { _ in
+            Task { await refreshVisibleSection() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: APIClient.didChangeFamilyLibrary)) { _ in
             Task { await refreshVisibleSection() }
         }
     }

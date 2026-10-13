@@ -87,17 +87,22 @@ enum ReviewIntervals {
 enum SpacedRepetitionStorage {
     nonisolated static let statesKey = "lume.review.states"
 
-    nonisolated static func loadSnapshot(from defaults: UserDefaults = .standard) -> ReviewSnapshot {
-        guard let data = defaults.data(forKey: statesKey),
+    nonisolated static func loadSnapshot(from defaults: UserDefaults = .standard, namespace: String? = nil) -> ReviewSnapshot {
+        guard let data = defaults.data(forKey: key(namespace: namespace)),
               let decoded = try? JSONDecoder().decode(ReviewSnapshot.self, from: data) else {
             return ReviewSnapshot()
         }
         return decoded.normalized
     }
 
-    nonisolated static func saveSnapshot(_ snapshot: ReviewSnapshot, to defaults: UserDefaults = .standard) {
+    nonisolated static func saveSnapshot(_ snapshot: ReviewSnapshot, to defaults: UserDefaults = .standard, namespace: String? = nil) {
         guard let data = try? JSONEncoder().encode(snapshot.normalized) else { return }
-        defaults.set(data, forKey: statesKey)
+        defaults.set(data, forKey: key(namespace: namespace))
+    }
+
+    nonisolated private static func key(namespace: String?) -> String {
+        guard let namespace else { return statesKey }
+        return "lume.family.\(namespace).\(statesKey)"
     }
 }
 
@@ -111,6 +116,7 @@ final class SpacedRepetitionStore: ObservableObject {
     @Published private(set) var states: [String: ReviewState]
 
     private let defaults: UserDefaults
+    private var namespace: String?
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -150,6 +156,7 @@ final class SpacedRepetitionStore: ObservableObject {
         state.dueAt = date.addingTimeInterval(ReviewIntervals.interval(forBox: state.box))
         states[id] = state
         persist()
+        if namespace != nil { FamilySharingManager.shared.reviewDidChange(mediaID: id) }
     }
 
     /// 中途被切走 = 没通过：退一档，并把到期时间拉近。
@@ -163,6 +170,7 @@ final class SpacedRepetitionStore: ObservableObject {
         state.dueAt = date.addingTimeInterval(ReviewIntervals.interval(forBox: state.box))
         states[id] = state
         persist()
+        if namespace != nil { FamilySharingManager.shared.reviewDidChange(mediaID: id) }
     }
 
     /// 曲目被删除时清掉它的状态。
@@ -170,18 +178,45 @@ final class SpacedRepetitionStore: ObservableObject {
         guard states[mediaID] != nil else { return }
         states[mediaID] = nil
         persist()
+        if namespace != nil { FamilySharingManager.shared.reviewDidChange(mediaID: mediaID) }
     }
 
     func clearAll() {
         guard !states.isEmpty else { return }
         states = [:]
         persist()
+        if namespace != nil { FamilySharingManager.shared.allReviewStatesDidChange() }
     }
 
     // MARK: - 存档
 
     func reloadFromStorage() {
-        states = SpacedRepetitionStorage.loadSnapshot(from: defaults).states
+        states = SpacedRepetitionStorage.loadSnapshot(from: defaults, namespace: namespace).states
+    }
+
+    func activateFamily(id: String, copyPersonalStates: Bool) {
+        let marker = "lume.family.\(id).review.initialized"
+        if copyPersonalStates && !defaults.bool(forKey: marker) {
+            SpacedRepetitionStorage.saveSnapshot(ReviewSnapshot(states: states), to: defaults, namespace: id)
+        }
+        defaults.set(true, forKey: marker)
+        namespace = id
+        reloadFromStorage()
+    }
+
+    func deactivateFamily() {
+        namespace = nil
+        reloadFromStorage()
+    }
+
+    func applyRemoteFamilyStates(_ incoming: [String: ReviewState]) {
+        guard namespace != nil, states != incoming else { return }
+        states = incoming
+        persist()
+    }
+
+    func currentSnapshot() -> ReviewSnapshot {
+        ReviewSnapshot(states: states)
     }
 
     /// 导入时用。返回是否真的发生了变化。
@@ -205,6 +240,6 @@ final class SpacedRepetitionStore: ObservableObject {
                 .prefix(Self.maxTrackedStates)
             states = Dictionary(uniqueKeysWithValues: trimmed.map { ($0.key, $0.value) })
         }
-        SpacedRepetitionStorage.saveSnapshot(ReviewSnapshot(states: states), to: defaults)
+        SpacedRepetitionStorage.saveSnapshot(ReviewSnapshot(states: states), to: defaults, namespace: namespace)
     }
 }

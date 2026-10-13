@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 struct ImportReport: Hashable {
@@ -28,7 +29,9 @@ actor LocalLibraryStore {
     static let shared = LocalLibraryStore()
 
     private let fileManager: FileManager
-    private let storageURL: URL
+    private let personalStorageURL: URL
+    private var storageURL: URL
+    private var activeFamilyID: String?
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
@@ -37,7 +40,9 @@ actor LocalLibraryStore {
 
     init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
-        self.storageURL = Self.resolveStorageURL(fileManager: fileManager)
+        let personalURL = Self.resolveStorageURL(fileManager: fileManager)
+        self.personalStorageURL = personalURL
+        self.storageURL = personalURL
 
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -251,8 +256,10 @@ actor LocalLibraryStore {
         }
 
         let didChangeFavorites = importFavorites(from: payload.favoriteGroups)
-        let didImportPlaybackStats = importPlaybackStats(from: payload.playbackStats)
-        let didImportReviewStates = importReviewStates(from: payload.reviewStates)
+        // A family import adds library entries. Playback and review data have their own
+        // CloudKit records, so importing an aggregate JSON backup here would double count them.
+        let didImportPlaybackStats = activeFamilyID == nil && importPlaybackStats(from: payload.playbackStats)
+        let didImportReviewStates = activeFamilyID == nil && importReviewStates(from: payload.reviewStates)
         if didChangeMedia || didChangeFavorites {
             try persist()
         }
@@ -266,7 +273,7 @@ actor LocalLibraryStore {
         )
     }
 
-    func exportJSON() throws -> Data {
+    func exportJSON(playbackStats: PlaybackStatsSnapshot, reviewStates: ReviewSnapshot) throws -> Data {
         let records = state.mediaRecords.map { record in
             MediaExportRecord(
                 url: record.url.absoluteString,
@@ -293,8 +300,8 @@ actor LocalLibraryStore {
             version: 3,
             items: records,
             favoriteGroups: favoriteGroups,
-            playbackStats: PlaybackStatsStorage.loadSnapshot(),
-            reviewStates: SpacedRepetitionStorage.loadSnapshot()
+            playbackStats: playbackStats,
+            reviewStates: reviewStates
         )
         return try encoder.encode(payload)
     }
@@ -447,6 +454,71 @@ actor LocalLibraryStore {
         }
     }
 
+    func switchToFamily(id: String, copyPersonalLibrary: Bool) throws {
+        guard activeFamilyID != id else { return }
+        let familyURL = Self.familyStorageURL(for: id, fileManager: fileManager)
+        let cachedState = Self.loadState(from: familyURL, decoder: decoder, fileManager: fileManager)
+        let personalState = Self.loadState(from: personalStorageURL, decoder: decoder, fileManager: fileManager)
+        activeFamilyID = id
+        storageURL = familyURL
+        state = cachedState ?? (copyPersonalLibrary ? (personalState ?? LibraryState()) : LibraryState())
+        rebuildIndex()
+        if cachedState == nil { try persist() }
+    }
+
+    func switchToPersonalLibrary() {
+        guard activeFamilyID != nil else { return }
+        activeFamilyID = nil
+        storageURL = personalStorageURL
+        state = Self.loadState(from: personalStorageURL, decoder: decoder, fileManager: fileManager) ?? LibraryState()
+        rebuildIndex()
+    }
+
+    func familySnapshot() -> FamilyLibrarySnapshot {
+        let groups = state.favoriteGroups.enumerated().map { index, group in
+            FamilyFavoriteGroup(id: group.id, name: group.name, mediaType: group.mediaType, order: index)
+        }
+        let entries = state.favoriteGroups.flatMap { group in
+            (state.favoriteItemsByGroup[group.id] ?? []).enumerated().map { index, item in
+                FamilyFavoriteEntry(groupID: group.id, mediaID: item.mediaID, order: index)
+            }
+        }
+        return FamilyLibrarySnapshot(media: state.mediaRecords, groups: groups, entries: entries)
+    }
+
+    func replaceFamilySnapshot(_ snapshot: FamilyLibrarySnapshot, for familyID: String) throws {
+        guard activeFamilyID == familyID else { return }
+        let media = Array(Dictionary(snapshot.media.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }).values)
+            .sorted { $0.id < $1.id }
+        let byID = Dictionary(uniqueKeysWithValues: media.map { ($0.id, $0) })
+        let groups = snapshot.groups.sorted { left, right in
+            left.order == right.order ? left.id < right.id : left.order < right.order
+        }
+        var favoriteItems: [String: [FavoriteListItem]] = [:]
+        for group in groups {
+            let entries = snapshot.entries
+                .filter { $0.groupID == group.id }
+                .sorted { left, right in
+                    left.order == right.order ? left.mediaID < right.mediaID : left.order < right.order
+                }
+            var seen: Set<String> = []
+            favoriteItems[group.id] = entries.compactMap { entry in
+                guard seen.insert(entry.mediaID).inserted,
+                      let record = byID[entry.mediaID], record.type == group.mediaType else { return nil }
+                return record.asFavoriteItem()
+            }
+        }
+        let replacement = LibraryState(
+            mediaRecords: media,
+            favoriteGroups: groups.map { FavoriteGroupSeed(id: $0.id, name: $0.name, mediaType: $0.mediaType) },
+            favoriteItemsByGroup: favoriteItems
+        )
+        guard replacement != state else { return }
+        state = replacement
+        rebuildIndex()
+        try persist()
+    }
+
     private func persist() throws {
         let folderURL = storageURL.deletingLastPathComponent()
         if !fileManager.fileExists(atPath: folderURL.path) {
@@ -461,6 +533,13 @@ actor LocalLibraryStore {
         return base
             .appendingPathComponent(AppConfig.libraryFolderName, isDirectory: true)
             .appendingPathComponent(AppConfig.libraryFileName)
+    }
+
+    private static func familyStorageURL(for id: String, fileManager: FileManager) -> URL {
+        let digest = SHA256.hash(data: Data(id.utf8)).map { String(format: "%02x", $0) }.joined()
+        return resolveStorageURL(fileManager: fileManager)
+            .deletingLastPathComponent()
+            .appendingPathComponent("family-\(digest).json")
     }
 
     private static func loadState(from url: URL, decoder: JSONDecoder, fileManager: FileManager) -> LibraryState? {
@@ -653,18 +732,18 @@ actor LocalLibraryStore {
     private func importPlaybackStats(from snapshot: PlaybackStatsSnapshot?) -> Bool {
         guard let snapshot else { return false }
         let normalized = snapshot.normalized
-        let current = PlaybackStatsStorage.loadSnapshot()
+        let current = PlaybackStatsStorage.loadSnapshot(namespace: activeFamilyID)
         guard current != normalized else { return false }
-        PlaybackStatsStorage.saveSnapshot(normalized)
+        PlaybackStatsStorage.saveSnapshot(normalized, namespace: activeFamilyID)
         return true
     }
 
     private func importReviewStates(from snapshot: ReviewSnapshot?) -> Bool {
         guard let snapshot else { return false }
         let normalized = snapshot.normalized
-        let current = SpacedRepetitionStorage.loadSnapshot()
+        let current = SpacedRepetitionStorage.loadSnapshot(namespace: activeFamilyID)
         guard current != normalized else { return false }
-        SpacedRepetitionStorage.saveSnapshot(normalized)
+        SpacedRepetitionStorage.saveSnapshot(normalized, namespace: activeFamilyID)
         return true
     }
 
@@ -706,7 +785,26 @@ actor LocalLibraryStore {
     }
 }
 
-private struct LibraryState: Codable {
+struct FamilyLibrarySnapshot {
+    var media: [MediaRecord] = []
+    var groups: [FamilyFavoriteGroup] = []
+    var entries: [FamilyFavoriteEntry] = []
+}
+
+struct FamilyFavoriteGroup: Codable, Hashable {
+    let id: String
+    let name: String
+    let mediaType: MediaType
+    let order: Int
+}
+
+struct FamilyFavoriteEntry: Codable, Hashable {
+    let groupID: String
+    let mediaID: String
+    let order: Int
+}
+
+private struct LibraryState: Codable, Equatable {
     var mediaRecords: [MediaRecord] = []
     var favoriteGroups: [FavoriteGroupSeed] = []
     var favoriteItemsByGroup: [String: [FavoriteListItem]] = [:]
@@ -718,7 +816,7 @@ private struct FavoriteGroupSeed: Codable, Hashable {
     let mediaType: MediaType
 }
 
-private struct MediaRecord: Codable, Hashable {
+struct MediaRecord: Codable, Hashable {
     let id: String
     let url: URL
     let type: MediaType

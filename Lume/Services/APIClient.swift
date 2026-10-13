@@ -10,6 +10,8 @@ final class APIClient {
     static let shared = APIClient()
     static let didDeleteMedia = Notification.Name("APIClientDidDeleteMedia")
     static let didUpdateMedia = Notification.Name("APIClientDidUpdateMedia")
+    static let didChangeFamilyLibrary = Notification.Name("APIClientDidChangeFamilyLibrary")
+    static let didSwitchLibrary = Notification.Name("APIClientDidSwitchLibrary")
 
     var authorizationToken: String?
 
@@ -35,14 +37,21 @@ final class APIClient {
     }
 
     func importJSON(url: URL) async throws -> ImportReport {
+        let accessGranted = url.startAccessingSecurityScopedResource()
+        defer { if accessGranted { url.stopAccessingSecurityScopedResource() } }
         let report = try await library.importJSON(from: url)
         await PlaybackStatsStore.shared.reloadFromStorage()
         await SpacedRepetitionStore.shared.reloadFromStorage()
+        await FamilySharingManager.shared.libraryDidChange()
+        await FamilySharingManager.shared.playbackDidChange(immediate: true)
+        await FamilySharingManager.shared.allReviewStatesDidChange()
         return report
     }
 
     func exportJSONFile() async throws -> URL {
-        let data = try await library.exportJSON()
+        let playbackStats = await PlaybackStatsStore.shared.displayedSnapshot()
+        let reviewStates = await SpacedRepetitionStore.shared.currentSnapshot()
+        let data = try await library.exportJSON(playbackStats: playbackStats, reviewStates: reviewStates)
         let timestamp = Self.exportDateFormatter.string(from: Date())
         let fileName = "lume-library-\(timestamp).json"
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
@@ -52,16 +61,19 @@ final class APIClient {
 
     func deleteMedia(id: String) async throws {
         try await library.deleteMedia(id: id)
+        await SpacedRepetitionStore.shared.remove(mediaID: id)
+        await FamilySharingManager.shared.libraryDidChange()
         NotificationCenter.default.post(name: Self.didDeleteMedia, object: id)
     }
 
     func updateMedia(id: String, title: String, subtitle: String?, tags: [String]?) async throws {
         try await library.updateMedia(id: id, title: title, subtitle: subtitle, tags: tags)
+        await FamilySharingManager.shared.libraryDidChange()
         NotificationCenter.default.post(name: Self.didUpdateMedia, object: id)
     }
 
     func postProgress(id: String, positionMS: Int, event: String? = nil) async throws {
-        _ = (id, positionMS, event)
+        await FamilySharingManager.shared.progressDidChange(mediaID: id, positionMS: positionMS, event: event)
     }
 
     func fetchFavoriteGroups() async throws -> [FavoriteGroup] {
@@ -69,11 +81,14 @@ final class APIClient {
     }
 
     func createFavoriteGroup(name: String, mediaType: MediaType) async throws -> FavoriteGroup {
-        try await library.createGroup(name: name, mediaType: mediaType)
+        let group = try await library.createGroup(name: name, mediaType: mediaType)
+        await FamilySharingManager.shared.libraryDidChange()
+        return group
     }
 
     func deleteFavoriteGroup(id: String) async throws {
         try await library.deleteGroup(id: id)
+        await FamilySharingManager.shared.libraryDidChange()
     }
 
     func fetchFavoriteItems(groupID: String, page: Int = 1, pageSize: Int = 50) async throws -> FavoriteListResponse {
@@ -82,15 +97,19 @@ final class APIClient {
     }
 
     func addFavoriteItem(groupID: String, mediaID: String) async throws -> FavoriteListItem {
-        try await library.addItem(groupID: groupID, mediaID: mediaID)
+        let item = try await library.addItem(groupID: groupID, mediaID: mediaID)
+        await FamilySharingManager.shared.libraryDidChange()
+        return item
     }
 
     func removeFavoriteItem(groupID: String, mediaID: String) async throws {
         try await library.removeItem(groupID: groupID, mediaID: mediaID)
+        await FamilySharingManager.shared.libraryDidChange()
     }
 
     func reorderFavoriteItems(groupID: String, orderedMediaIDs: [String]) async throws {
         try await library.reorderItems(groupID: groupID, orderedMediaIDs: orderedMediaIDs)
+        await FamilySharingManager.shared.libraryDidChange()
     }
 
     func fetchUnfavoritedAudioItems() async throws -> [FavoriteListItem] {

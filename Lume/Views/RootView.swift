@@ -1,9 +1,11 @@
+import CloudKit
 import SwiftUI
 
 struct RootView: View {
     @StateObject private var auth = AuthViewModel()
     @StateObject private var playback = PlayerViewModel()
     @StateObject private var updateGate = UpdateGateViewModel()
+    @StateObject private var familySharing = FamilySharingManager.shared
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -44,13 +46,17 @@ struct RootView: View {
         .onChange(of: auth.user) { _ in
             playback.isMiniVisible = auth.isSignedIn
             if auth.isSignedIn {
-                Task { await playback.restoreLastPlayedIfNeeded(autoPlay: true) }
+                Task {
+                    await familySharing.start()
+                    await playback.restoreLastPlayedIfNeeded(autoPlay: true)
+                }
             }
         }
         .onAppear {
-            if auth.isSignedIn {
-                playback.isMiniVisible = true
-                Task { await playback.restoreLastPlayedIfNeeded(autoPlay: true) }
+            if auth.isSignedIn { playback.isMiniVisible = true }
+            Task {
+                await familySharing.start()
+                if auth.isSignedIn { await playback.restoreLastPlayedIfNeeded(autoPlay: true) }
             }
             Task { await updateGate.refresh() }
         }
@@ -61,8 +67,15 @@ struct RootView: View {
                 }
                 if phase == .active {
                     Task { await updateGate.refresh() }
+                    Task { await familySharing.refresh() }
                 }
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name.CKAccountChanged)) { _ in
+            Task { await familySharing.iCloudAccountDidChange() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: APIClient.didSwitchLibrary)) { _ in
+            playback.resetForLibrarySwitch()
         }
         .sheet(isPresented: $playback.presentExpanded) {
             if let detail = playback.detail {

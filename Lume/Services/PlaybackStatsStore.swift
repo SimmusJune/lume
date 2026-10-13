@@ -24,12 +24,12 @@ struct PlayedCount: Identifiable, Hashable, Sendable {
 }
 
 struct PlaybackStatsSnapshot: Codable, Hashable, Sendable {
-    let totalSeconds: Int
-    let dailySeconds: [String: Int]
-    let playCounts: [String: Int]
-    let history: [PlaybackEvent]
+    var totalSeconds: Int
+    var dailySeconds: [String: Int]
+    var playCounts: [String: Int]
+    var history: [PlaybackEvent]
 
-    init(
+    nonisolated init(
         totalSeconds: Int,
         dailySeconds: [String: Int],
         playCounts: [String: Int] = [:],
@@ -78,11 +78,11 @@ enum PlaybackStatsStorage {
     nonisolated static let playCountsKey = "lume.playback.playCounts"
     nonisolated static let historyKey = "lume.playback.history"
 
-    nonisolated static func loadSnapshot(from defaults: UserDefaults = .standard) -> PlaybackStatsSnapshot {
-        let totalSeconds = max(0, defaults.integer(forKey: totalKey))
+    nonisolated static func loadSnapshot(from defaults: UserDefaults = .standard, namespace: String? = nil) -> PlaybackStatsSnapshot {
+        let totalSeconds = max(0, defaults.integer(forKey: key(totalKey, namespace: namespace)))
 
         let dailySeconds: [String: Int]
-        if let data = defaults.data(forKey: dailyKey),
+        if let data = defaults.data(forKey: key(dailyKey, namespace: namespace)),
            let decoded = try? JSONDecoder().decode([String: Int].self, from: data) {
             dailySeconds = decoded
         } else {
@@ -90,7 +90,7 @@ enum PlaybackStatsStorage {
         }
 
         let playCounts: [String: Int]
-        if let data = defaults.data(forKey: playCountsKey),
+        if let data = defaults.data(forKey: key(playCountsKey, namespace: namespace)),
            let decoded = try? JSONDecoder().decode([String: Int].self, from: data) {
             playCounts = decoded
         } else {
@@ -98,7 +98,7 @@ enum PlaybackStatsStorage {
         }
 
         let history: [PlaybackEvent]
-        if let data = defaults.data(forKey: historyKey),
+        if let data = defaults.data(forKey: key(historyKey, namespace: namespace)),
            let decoded = try? JSONDecoder().decode([PlaybackEvent].self, from: data) {
             history = decoded
         } else {
@@ -113,18 +113,23 @@ enum PlaybackStatsStorage {
         ).normalized
     }
 
-    nonisolated static func saveSnapshot(_ snapshot: PlaybackStatsSnapshot, to defaults: UserDefaults = .standard) {
+    nonisolated static func saveSnapshot(_ snapshot: PlaybackStatsSnapshot, to defaults: UserDefaults = .standard, namespace: String? = nil) {
         let normalized = snapshot.normalized
-        defaults.set(normalized.totalSeconds, forKey: totalKey)
+        defaults.set(normalized.totalSeconds, forKey: key(totalKey, namespace: namespace))
         if let data = try? JSONEncoder().encode(normalized.dailySeconds) {
-            defaults.set(data, forKey: dailyKey)
+            defaults.set(data, forKey: key(dailyKey, namespace: namespace))
         }
         if let data = try? JSONEncoder().encode(normalized.playCounts) {
-            defaults.set(data, forKey: playCountsKey)
+            defaults.set(data, forKey: key(playCountsKey, namespace: namespace))
         }
         if let data = try? JSONEncoder().encode(normalized.history) {
-            defaults.set(data, forKey: historyKey)
+            defaults.set(data, forKey: key(historyKey, namespace: namespace))
         }
+    }
+
+    nonisolated private static func key(_ base: String, namespace: String?) -> String {
+        guard let namespace else { return base }
+        return "lume.family.\(namespace).\(base)"
     }
 }
 
@@ -142,6 +147,9 @@ final class PlaybackStatsStore: ObservableObject {
     @Published private(set) var history: [PlaybackEvent]
 
     private let defaults: UserDefaults
+    private var localSnapshot: PlaybackStatsSnapshot
+    private var namespace: String?
+    private var remoteSnapshots: [String: PlaybackStatsSnapshot] = [:]
 
     private static let dayKeyFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -155,6 +163,7 @@ final class PlaybackStatsStore: ObservableObject {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         let snapshot = PlaybackStatsStorage.loadSnapshot(from: defaults)
+        self.localSnapshot = snapshot
         self.totalSeconds = snapshot.totalSeconds
         self.dailySeconds = snapshot.dailySeconds
         self.playCounts = snapshot.playCounts
@@ -165,10 +174,12 @@ final class PlaybackStatsStore: ObservableObject {
 
     func recordPlayback(seconds: Int, at date: Date = Date()) {
         guard seconds > 0 else { return }
-        totalSeconds += seconds
+        localSnapshot.totalSeconds += seconds
         let key = Self.dateKey(for: date)
-        dailySeconds[key, default: 0] += seconds
+        localSnapshot.dailySeconds[key, default: 0] += seconds
         persist()
+        publish()
+        if namespace != nil { FamilySharingManager.shared.playbackDidChange() }
     }
 
     // MARK: - 完整播放（次数 + 历史）
@@ -177,10 +188,12 @@ final class PlaybackStatsStore: ObservableObject {
     func recordCompletedPlayback(mediaID: String, at date: Date = Date()) {
         let id = mediaID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !id.isEmpty else { return }
-        playCounts[id, default: 0] += 1
-        history.append(PlaybackEvent(mediaID: id, date: date))
+        localSnapshot.playCounts[id, default: 0] += 1
+        localSnapshot.history.append(PlaybackEvent(mediaID: id, date: date))
         trimHistory(relativeTo: date)
         persist()
+        publish()
+        if namespace != nil { FamilySharingManager.shared.playbackDidChange(immediate: true) }
     }
 
     func playCount(for mediaID: String) -> Int {
@@ -261,32 +274,93 @@ final class PlaybackStatsStore: ObservableObject {
     }
 
     func reloadFromStorage() {
-        let snapshot = PlaybackStatsStorage.loadSnapshot(from: defaults)
-        totalSeconds = snapshot.totalSeconds
-        dailySeconds = snapshot.dailySeconds
-        playCounts = snapshot.playCounts
-        history = snapshot.history
+        localSnapshot = PlaybackStatsStorage.loadSnapshot(from: defaults, namespace: namespace)
+        publish()
+    }
+
+    func activateFamily(id: String, copyPersonalStats: Bool) {
+        namespace = id
+        let marker = "lume.family.\(id).playback.initialized"
+        if copyPersonalStats && !defaults.bool(forKey: marker) {
+            PlaybackStatsStorage.saveSnapshot(localSnapshot, to: defaults, namespace: id)
+        }
+        defaults.set(true, forKey: marker)
+        localSnapshot = PlaybackStatsStorage.loadSnapshot(from: defaults, namespace: id)
+        remoteSnapshots = [:]
+        publish()
+    }
+
+    func deactivateFamily() {
+        namespace = nil
+        remoteSnapshots = [:]
+        reloadFromStorage()
+    }
+
+    func localFamilySnapshot() -> PlaybackStatsSnapshot {
+        localSnapshot
+    }
+
+    func displayedSnapshot() -> PlaybackStatsSnapshot {
+        PlaybackStatsSnapshot(totalSeconds: totalSeconds, dailySeconds: dailySeconds, playCounts: playCounts, history: history)
+    }
+
+    func applyRemoteFamilySnapshots(_ snapshots: [String: PlaybackStatsSnapshot], localDeviceID: String) {
+        guard namespace != nil else { return }
+        if let server = snapshots[localDeviceID] {
+            var merged = localSnapshot
+            merged.totalSeconds = max(merged.totalSeconds, server.totalSeconds)
+            for (day, seconds) in server.dailySeconds {
+                merged.dailySeconds[day] = max(merged.dailySeconds[day] ?? 0, seconds)
+            }
+            for (id, count) in server.playCounts {
+                merged.playCounts[id] = max(merged.playCounts[id] ?? 0, count)
+            }
+            let historyByID = Dictionary(
+                (merged.history + server.history).map { ($0.id, $0) },
+                uniquingKeysWith: { first, _ in first }
+            )
+            merged.history = Array(historyByID.values.sorted { $0.date < $1.date }.suffix(Self.historyMaxCount))
+            if merged != localSnapshot {
+                localSnapshot = merged
+                persist()
+            }
+            if merged != server { FamilySharingManager.shared.playbackDidChange(immediate: true) }
+        } else if localSnapshot.totalSeconds > 0 || !localSnapshot.playCounts.isEmpty {
+            FamilySharingManager.shared.playbackDidChange(immediate: true)
+        }
+        remoteSnapshots = snapshots.filter { $0.key != localDeviceID }
+        publish()
     }
 
     private func trimHistory(relativeTo date: Date) {
         let calendar = Calendar.current
         if let cutoff = calendar.date(byAdding: .day, value: -Self.historyMaxAgeDays, to: date) {
-            history.removeAll { $0.date < cutoff }
+            localSnapshot.history.removeAll { $0.date < cutoff }
         }
-        if history.count > Self.historyMaxCount {
-            history.removeFirst(history.count - Self.historyMaxCount)
+        if localSnapshot.history.count > Self.historyMaxCount {
+            localSnapshot.history.removeFirst(localSnapshot.history.count - Self.historyMaxCount)
         }
     }
 
     private func persist() {
-        PlaybackStatsStorage.saveSnapshot(
-            PlaybackStatsSnapshot(
-                totalSeconds: totalSeconds,
-                dailySeconds: dailySeconds,
-                playCounts: playCounts,
-                history: history
-            ),
-            to: defaults
-        )
+        PlaybackStatsStorage.saveSnapshot(localSnapshot, to: defaults, namespace: namespace)
+    }
+
+    private func publish() {
+        var aggregate = localSnapshot
+        for snapshot in remoteSnapshots.values {
+            aggregate.totalSeconds += snapshot.totalSeconds
+            for (day, seconds) in snapshot.dailySeconds {
+                aggregate.dailySeconds[day, default: 0] += seconds
+            }
+            for (id, count) in snapshot.playCounts {
+                aggregate.playCounts[id, default: 0] += count
+            }
+            aggregate.history.append(contentsOf: snapshot.history)
+        }
+        totalSeconds = aggregate.totalSeconds
+        dailySeconds = aggregate.dailySeconds
+        playCounts = aggregate.playCounts
+        history = Array(aggregate.history.sorted { $0.date < $1.date }.suffix(Self.historyMaxCount))
     }
 }

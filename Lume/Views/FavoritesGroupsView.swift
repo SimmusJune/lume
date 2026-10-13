@@ -78,6 +78,9 @@ struct FavoritesGroupsView: View {
         .onReceive(NotificationCenter.default.publisher(for: APIClient.didDeleteMedia)) { _ in
             Task { await viewModel.load() }
         }
+        .onReceive(NotificationCenter.default.publisher(for: APIClient.didChangeFamilyLibrary)) { _ in
+            Task { await viewModel.load() }
+        }
     }
 }
 
